@@ -38,7 +38,7 @@
 #include "esp_app_desc.h"
 
 static const char *TAG = "app";
-
+/* design by @MiaooAim */
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
 {

@@ -10,7 +10,7 @@
     "sdkconfig.defaults": "kconfig"
   },
   "idf.currentSetup": "D:\\esp\\v6.0.2\\esp-idf",
-  "idf.customExtraPaths": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;D:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;D:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;D:\\Espressif\\tools\\ninja\\1.13.1;D:\\Espressif\\tools\\cmake\\4.0.3\\bin",
+  "idf.customExtraPaths": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;D:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;D:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;D:\\Espressif\\tools\\ninja\\1.12.1;D:\\Espressif\\tools\\cmake\\4.0.3\\bin",
   "idf.customExtraVars": {
     "IDF_PATH": "D:\\esp\\v6.0.2\\esp-idf",
     "PYTHON": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts\\python.exe",
@@ -20,6 +20,6 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=d:\\insScreen_project\\miaomiao\\build"
+    "--compile-commands-dir=d:\\insScreen_project\\InsScreen_project\\build"
   ]
 }
