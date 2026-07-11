@@ -101,11 +101,13 @@ def ensure_pillow():
     try:
         from PIL import Image, ImageDraw, ImageFont
         return True
-    except ImportError:
-        print("Pillow not found, installing...")
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow", "-q"])
-        return True
+    except ImportError as exc:
+        req = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+        raise SystemExit(
+            "Pillow is required for font generation.\n"
+            "Install tool dependencies in this Python environment:\n"
+            f"  {sys.executable} -m pip install -r {req}"
+        ) from exc
 
 
 def find_font(candidates):

@@ -52,7 +52,12 @@ def ensure_pillow():
     try:
         from PIL import Image, ImageDraw, ImageFont  # noqa: F401
     except ImportError as exc:
-        raise SystemExit("Pillow is required: python -m pip install Pillow") from exc
+        req = Path(__file__).with_name("requirements.txt")
+        raise SystemExit(
+            "Pillow is required for font generation.\n"
+            f"Install tool dependencies in this Python environment:\n"
+            f"  {sys.executable} -m pip install -r {req}"
+        ) from exc
 
 
 def load_extra_chars(path: Path) -> str:

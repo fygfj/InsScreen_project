@@ -4,11 +4,11 @@
     {
       "label": "ESP-IDF: Configure",
       "type": "shell",
-      "command": "D:\\Espressif\\tools\\cmake\\4.0.3\\bin\\cmake.exe",
+      "command": "C:\\Espressif\\tools\\cmake\\4.0.3\\bin\\cmake.exe",
       "args": [
         "-G",
         "Ninja",
-        "-DPYTHON=D:/Espressif/tools/python/v6.0.2/venv/Scripts/python.exe",
+        "-DPYTHON=C:/Espressif/tools/python/v6.0.2/venv/Scripts/python.exe",
         "-DPYTHON_DEPS_CHECKED=1",
         "-DESP_PLATFORM=1",
         "-DIDF_TARGET=esp32s3",
@@ -20,10 +20,10 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "IDF_PATH": "D:\\esp\\v6.0.2\\esp-idf",
-          "PYTHON": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts\\python.exe",
-          "ESP_ROM_ELF_DIR": "D:\\Espressif\\tools\\esp-rom-elfs\\20241011",
-          "PATH": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;D:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;D:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;D:\\Espressif\\tools\\ninja\\1.12.1;D:\\Espressif\\tools\\cmake\\4.0.3\\bin;${env:PATH}"
+          "IDF_PATH": "C:\\esp\\v6.0.2\\esp-idf",
+          "PYTHON": "C:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts\\python.exe",
+          "ESP_ROM_ELF_DIR": "C:\\Espressif\\tools\\esp-rom-elfs\\20241011",
+          "PATH": "C:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;C:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;C:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;C:\\Espressif\\tools\\ninja\\1.12.1;C:\\Espressif\\tools\\cmake\\4.0.3\\bin;${env:PATH}"
         }
       },
       "problemMatcher": []
@@ -31,7 +31,7 @@
     {
       "label": "ESP-IDF: Build",
       "type": "shell",
-      "command": "D:\\Espressif\\tools\\cmake\\4.0.3\\bin\\cmake.exe",
+      "command": "C:\\Espressif\\tools\\cmake\\4.0.3\\bin\\cmake.exe",
       "args": [
         "--build",
         "${workspaceFolder}\\build",
@@ -42,10 +42,10 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "IDF_PATH": "D:\\esp\\v6.0.2\\esp-idf",
-          "PYTHON": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts\\python.exe",
-          "ESP_ROM_ELF_DIR": "D:\\Espressif\\tools\\esp-rom-elfs\\20241011",
-          "PATH": "D:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;D:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;D:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;D:\\Espressif\\tools\\ninja\\1.12.1;D:\\Espressif\\tools\\cmake\\4.0.3\\bin;${env:PATH}"
+          "IDF_PATH": "C:\\esp\\v6.0.2\\esp-idf",
+          "PYTHON": "C:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts\\python.exe",
+          "ESP_ROM_ELF_DIR": "C:\\Espressif\\tools\\esp-rom-elfs\\20241011",
+          "PATH": "C:\\Espressif\\tools\\python\\v6.0.2\\venv\\Scripts;C:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin;C:\\Espressif\\tools\\ccache\\4.12.1\\ccache-4.12.1-windows-x86_64;C:\\Espressif\\tools\\ninja\\1.12.1;C:\\Espressif\\tools\\cmake\\4.0.3\\bin;${env:PATH}"
         }
       },
       "dependsOn": [
