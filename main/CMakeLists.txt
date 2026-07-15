@@ -41,6 +41,8 @@ idf_component_register(
         "display_mode.c"
         "battery_mon.c"
         "buzzer.c"
+        "i2c_bus.c"
+        "aht20.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
@@ -71,6 +73,7 @@ idf_component_register(
         esp_timer
         esp_adc
         esp_driver_ledc
+        esp_driver_i2c
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
@@ -90,4 +93,3 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-error=format-truncation
     -Wno-error=format-overflow
 )
-
