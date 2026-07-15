@@ -10,6 +10,7 @@
 #include "freertos/semphr.h"
 
 #include "epd.h"
+#include "buzzer.h"
 #include "fb_render.h"
 #include "ui_theme.h"
 #include "time_sync.h"
@@ -534,10 +535,13 @@ esp_err_t countdown_show(void)
 
     int active_count = 0;
     int first_active = -1;
+    bool due_today = false;
     for (int i = 0; i < cfg.count && i < COUNTDOWN_MAX_ITEMS; i++) {
         if (cfg.items[i].active) {
             if (first_active < 0) first_active = i;
             active_count++;
+            if (days_remaining(&cfg.items[i]) == 0)
+                due_today = true;
         }
     }
 
@@ -591,6 +595,8 @@ esp_err_t countdown_show(void)
 
     display_policy_set_manual_screen_active(true);
     scheduler_notify_manual_show();
+    if (due_today)
+        (void)buzzer_beep_event(BUZZER_EVENT_COUNTDOWN, 3600, 5, 65, 65);
 
     ESP_LOGI(TAG, "Countdown displayed (%d active items)", active_count);
     return ESP_OK;

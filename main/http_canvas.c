@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <sys/unistd.h>
 #include <errno.h>
+#include "buzzer.h"
 #include "canvas_board.h"
 #include "display_policy.h"
 
@@ -218,6 +219,11 @@ esp_err_t canvas_show_post(httpd_req_t *req)
     if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
         err = ESP_ERR_INVALID_STATE;
     /* 不切换循环模式，留言板属于手动触发内容 */
+
+    if (err == ESP_OK)
+        (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
+    else if (err != ESP_ERR_INVALID_STATE)
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
 
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",

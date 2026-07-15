@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs.h"
 
 /* 使用 ESP32-S3 的 LEDC 外设产生稳定 PWM，不需要 CPU 手动快速翻转 GPIO。 */
 #define BUZZER_LEDC_MODE       LEDC_LOW_SPEED_MODE
@@ -24,6 +25,20 @@
 #define BUZZER_PATTERN_STACK     2048U
 #define BUZZER_PATTERN_PRIORITY  3U
 
+#define BUZZER_NVS_NS            "buzzer"
+#define BUZZER_NVS_KEY_ENABLED   "en"
+#define BUZZER_NVS_KEY_VOLUME    "vol"
+#define BUZZER_NVS_KEY_STARTUP   "startup"
+#define BUZZER_NVS_KEY_KEY       "key"
+#define BUZZER_NVS_KEY_NOTIFY    "notify"
+#define BUZZER_NVS_KEY_LOW_BAT   "lowbat"
+#define BUZZER_NVS_KEY_OTA       "ota"
+#define BUZZER_NVS_KEY_COUNTDOWN "cd"
+#define BUZZER_NVS_KEY_DISP_ERR  "derr"
+#define BUZZER_NVS_KEY_CONTENT   "content"
+#define BUZZER_NVS_KEY_SLEEP     "sleep"
+#define BUZZER_DEFAULT_VOLUME    40U
+
 static const char *TAG = "buzzer";
 
 /*
@@ -33,7 +48,22 @@ static const char *TAG = "buzzer";
 static atomic_bool s_initialized;
 static atomic_bool s_running;
 static atomic_bool s_pattern_running;
+static atomic_bool s_config_loaded;
 static atomic_uint_fast32_t s_frequency_hz;
+static portMUX_TYPE s_config_mux = portMUX_INITIALIZER_UNLOCKED;
+static buzzer_config_t s_config = {
+    .enabled = true,
+    .volume_percent = BUZZER_DEFAULT_VOLUME,
+    .startup_enabled = true,
+    .key_enabled = true,
+    .notify_enabled = true,
+    .low_battery_enabled = true,
+    .ota_enabled = true,
+    .countdown_enabled = true,
+    .display_error_enabled = true,
+    .content_enabled = true,
+    .sleep_enabled = true,
+};
 
 typedef struct {
     /* 一组短响任务所需要的全部参数。 */
@@ -46,8 +76,109 @@ typedef struct {
 
 static buzzer_pattern_t s_pattern;
 
+static buzzer_config_t buzzer_validated_config(const buzzer_config_t *cfg)
+{
+    buzzer_config_t out = {
+        .enabled = true,
+        .volume_percent = BUZZER_DEFAULT_VOLUME,
+        .startup_enabled = true,
+        .key_enabled = true,
+        .notify_enabled = true,
+        .low_battery_enabled = true,
+        .ota_enabled = true,
+        .countdown_enabled = true,
+        .display_error_enabled = true,
+        .content_enabled = true,
+        .sleep_enabled = true,
+    };
+    if (cfg)
+        out = *cfg;
+    if (out.volume_percent < 1)
+        out.volume_percent = 1;
+    if (out.volume_percent > 100)
+        out.volume_percent = 100;
+    return out;
+}
+
+static void buzzer_load_config_once(void)
+{
+    if (atomic_load(&s_config_loaded))
+        return;
+
+    buzzer_config_t cfg = buzzer_validated_config(&s_config);
+    nvs_handle_t h;
+    if (nvs_open(BUZZER_NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v8 = 0;
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_ENABLED, &v8) == ESP_OK)
+            cfg.enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_VOLUME, &v8) == ESP_OK)
+            cfg.volume_percent = v8;
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_STARTUP, &v8) == ESP_OK)
+            cfg.startup_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_KEY, &v8) == ESP_OK)
+            cfg.key_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_NOTIFY, &v8) == ESP_OK)
+            cfg.notify_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_LOW_BAT, &v8) == ESP_OK)
+            cfg.low_battery_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_OTA, &v8) == ESP_OK)
+            cfg.ota_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_COUNTDOWN, &v8) == ESP_OK)
+            cfg.countdown_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_DISP_ERR, &v8) == ESP_OK)
+            cfg.display_error_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_CONTENT, &v8) == ESP_OK)
+            cfg.content_enabled = (v8 != 0);
+        if (nvs_get_u8(h, BUZZER_NVS_KEY_SLEEP, &v8) == ESP_OK)
+            cfg.sleep_enabled = (v8 != 0);
+        nvs_close(h);
+    }
+
+    cfg = buzzer_validated_config(&cfg);
+    portENTER_CRITICAL(&s_config_mux);
+    s_config = cfg;
+    portEXIT_CRITICAL(&s_config_mux);
+    atomic_store(&s_config_loaded, true);
+}
+
+static esp_err_t buzzer_save_config(const buzzer_config_t *cfg)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(BUZZER_NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK)
+        return err;
+
+    err = nvs_set_u8(h, BUZZER_NVS_KEY_ENABLED, cfg->enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_VOLUME, cfg->volume_percent);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_STARTUP, cfg->startup_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_KEY, cfg->key_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_NOTIFY, cfg->notify_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_LOW_BAT, cfg->low_battery_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_OTA, cfg->ota_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_COUNTDOWN, cfg->countdown_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_DISP_ERR, cfg->display_error_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_CONTENT, cfg->content_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_set_u8(h, BUZZER_NVS_KEY_SLEEP, cfg->sleep_enabled ? 1 : 0);
+    if (err == ESP_OK)
+        err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
 esp_err_t buzzer_init(void)
 {
+    buzzer_load_config_once();
+
     /* 已经初始化过就直接返回，防止重复配置同一个 LEDC 通道。 */
     if (atomic_load(&s_initialized))
         return ESP_OK;
@@ -121,20 +252,21 @@ esp_err_t buzzer_start_with_volume(uint32_t frequency_hz,
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* LEDC 会根据时钟计算最接近的可实现频率，并返回实际频率。 */
-    uint32_t actual_hz = ledc_set_freq(BUZZER_LEDC_MODE,
-                                       BUZZER_LEDC_TIMER,
-                                       frequency_hz);
-    if (actual_hz == 0) {
-        ESP_LOGE(TAG, "cannot set frequency to %lu Hz",
-                 (unsigned long)frequency_hz);
-        return ESP_FAIL;
+    esp_err_t err = ledc_set_freq(BUZZER_LEDC_MODE,
+                                  BUZZER_LEDC_TIMER,
+                                  frequency_hz);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "cannot set frequency to %lu Hz: %s",
+                 (unsigned long)frequency_hz, esp_err_to_name(err));
+        return err;
     }
+    uint32_t actual_hz = ledc_get_freq(BUZZER_LEDC_MODE, BUZZER_LEDC_TIMER);
+    if (actual_hz == 0)
+        actual_hz = frequency_hz;
 
     /* 把用户的 1～100% 响度线性换算到 1～50% PWM 占空比。 */
     uint32_t duty = (BUZZER_DUTY_50_PERCENT * volume_percent + 99U) / 100U;
-    esp_err_t err = ledc_set_duty(BUZZER_LEDC_MODE,
-                                  BUZZER_LEDC_CHANNEL, duty);
+    err = ledc_set_duty(BUZZER_LEDC_MODE, BUZZER_LEDC_CHANNEL, duty);
     if (err != ESP_OK)
         return err;
 
@@ -175,6 +307,93 @@ bool buzzer_is_running(void)
 uint32_t buzzer_get_frequency(void)
 {
     return (uint32_t)atomic_load(&s_frequency_hz);
+}
+
+esp_err_t buzzer_get_config(buzzer_config_t *out)
+{
+    if (!out)
+        return ESP_ERR_INVALID_ARG;
+    buzzer_load_config_once();
+    portENTER_CRITICAL(&s_config_mux);
+    *out = s_config;
+    portEXIT_CRITICAL(&s_config_mux);
+    return ESP_OK;
+}
+
+esp_err_t buzzer_set_config(const buzzer_config_t *cfg)
+{
+    if (!cfg)
+        return ESP_ERR_INVALID_ARG;
+
+    buzzer_config_t validated = buzzer_validated_config(cfg);
+    portENTER_CRITICAL(&s_config_mux);
+    s_config = validated;
+    portEXIT_CRITICAL(&s_config_mux);
+    atomic_store(&s_config_loaded, true);
+
+    esp_err_t err = buzzer_save_config(&validated);
+    if (err != ESP_OK)
+        ESP_LOGE(TAG, "config save failed: %s", esp_err_to_name(err));
+    else
+        ESP_LOGI(TAG,
+                 "config updated: enabled=%d volume=%u startup=%d key=%d notify=%d lowbat=%d ota=%d countdown=%d display_error=%d content=%d sleep=%d",
+                 validated.enabled, (unsigned)validated.volume_percent,
+                 validated.startup_enabled, validated.key_enabled,
+                 validated.notify_enabled, validated.low_battery_enabled,
+                 validated.ota_enabled, validated.countdown_enabled,
+                 validated.display_error_enabled, validated.content_enabled,
+                 validated.sleep_enabled);
+    return err;
+}
+
+uint8_t buzzer_get_volume_percent(void)
+{
+    buzzer_config_t cfg;
+    if (buzzer_get_config(&cfg) != ESP_OK)
+        return BUZZER_DEFAULT_VOLUME;
+    return cfg.volume_percent;
+}
+
+bool buzzer_event_is_enabled(buzzer_event_t event)
+{
+    buzzer_config_t cfg;
+    if (buzzer_get_config(&cfg) != ESP_OK || !cfg.enabled)
+        return false;
+
+    switch (event) {
+    case BUZZER_EVENT_STARTUP:
+        return cfg.startup_enabled;
+    case BUZZER_EVENT_KEY:
+        return cfg.key_enabled;
+    case BUZZER_EVENT_NOTIFY:
+        return cfg.notify_enabled;
+    case BUZZER_EVENT_LOW_BATTERY:
+        return cfg.low_battery_enabled;
+    case BUZZER_EVENT_OTA:
+        return cfg.ota_enabled;
+    case BUZZER_EVENT_COUNTDOWN:
+        return cfg.countdown_enabled;
+    case BUZZER_EVENT_DISPLAY_ERROR:
+        return cfg.display_error_enabled;
+    case BUZZER_EVENT_CONTENT:
+        return cfg.content_enabled;
+    case BUZZER_EVENT_SLEEP:
+        return cfg.sleep_enabled;
+    default:
+        return false;
+    }
+}
+
+esp_err_t buzzer_beep_event(buzzer_event_t event,
+                            uint32_t frequency_hz,
+                            uint32_t times,
+                            uint32_t on_time_ms,
+                            uint32_t gap_ms)
+{
+    if (!buzzer_event_is_enabled(event))
+        return ESP_ERR_INVALID_STATE;
+    return buzzer_beep_pattern_ex(frequency_hz, times, on_time_ms, gap_ms,
+                                  buzzer_get_volume_percent());
 }
 
 static void buzzer_pattern_task(void *arg)

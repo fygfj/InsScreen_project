@@ -2,6 +2,7 @@
 #include <stdatomic.h>
 #include <string.h>
 #include "esp_log.h"
+#include "buzzer.h"
 #include "display_policy.h"
 #include "epd.h"
 
@@ -47,8 +48,10 @@ static esp_err_t display_mode_show_internal(int idx, bool new_request, unsigned 
         *epoch_out = epoch;
     display_mode_set_active(idx);
     esp_err_t err = m->show();
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
         display_mode_set_active(prev);
+    }
     return err;
 }
 

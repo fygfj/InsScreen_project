@@ -4,6 +4,7 @@
 #include <time.h>
 
 #include "display_mode.h"
+#include "buzzer.h"
 #include "epd.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -335,6 +336,11 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
              (unsigned long long)(sleep_us / 1000000ULL), cfg.interval_min,
              WAKE_GPIO_SW5, WAKE_GPIO_SW3);
 
+    if (buzzer_event_is_enabled(BUZZER_EVENT_SLEEP)) {
+        esp_err_t berr = buzzer_beep_event(BUZZER_EVENT_SLEEP, 3000, 1, 50, 0);
+        if (berr == ESP_OK)
+            vTaskDelay(pdMS_TO_TICKS(90));
+    }
     nvs_flush_all();
     usb_serial_jtag_ll_phy_enable_pad(false);  // 关闭 USB PHY，避免深睡眠漏电
     vTaskDelay(pdMS_TO_TICKS(100));

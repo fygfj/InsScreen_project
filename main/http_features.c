@@ -12,6 +12,7 @@
 #include "todo.h"
 #include "countdown.h"
 #include "calendar_display.h"
+#include "buzzer.h"
 #include "button.h"
 #include "display_mode.h"
 #include "display_policy.h"
@@ -104,10 +105,13 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
         if (display_policy_epoch_is_current(epoch)) {
             button_set_current_mode(DISPLAY_MODE_CALENDAR);
             power_mgr_save_mode(DISPLAY_MODE_CALENDAR);
+            (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
         } else {
             err = ESP_ERR_INVALID_STATE;
         }
     }
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
              err == ESP_OK ? "true" : "false",
@@ -230,7 +234,10 @@ esp_err_t feat_countdown_show_post(httpd_req_t *req)
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_COUNTDOWN);
         power_mgr_save_mode(DISPLAY_MODE_COUNTDOWN);
+        (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
     }
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, err == ESP_OK ? "{\"ok\":true}" : "{\"ok\":false}");
     return ESP_OK;

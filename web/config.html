@@ -559,6 +559,9 @@ body.config-page{
   box-shadow:0 0 0 3px rgba(255,155,179,.22);
 }
 .config-page input[type=file]{padding:8px 12px}
+.config-page input[type=range]{width:100%;accent-color:var(--ac)}
+.config-page .range-row{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:9px;align-items:center}
+.config-page .range-row input[type=number]{min-height:38px;padding:8px 10px;text-align:center}
 .config-page .log{
   margin-top:10px;
   min-height:48px;
@@ -1961,6 +1964,71 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
           </div>
         </section>
 
+        <section class="side-panel" id="buzzer">
+          <div class="side-head">
+            <div>
+              <h2>蜂鸣器</h2>
+              <p>管理开机、按键、配网和低电量提示音。</p>
+            </div>
+          </div>
+          <div class="side-body">
+            <label class="switch-row">
+              <span><b>声音总开关</b><span id="bzEnabledLabel">已开启</span></span>
+              <span class="toggle"><input type="checkbox" id="bzEnabled"><span class="sl"></span></span>
+            </label>
+            <div class="field-group">
+              <label>音量 <span id="bzVolumeText">40%</span></label>
+              <div class="range-row">
+                <input type="range" id="bzVolume" min="1" max="100" step="1" value="40">
+                <input type="number" id="bzVolumeNum" min="1" max="100" step="1" value="40">
+              </div>
+            </div>
+            <div class="switch-list">
+              <label class="switch-row">
+                <span><b>开机就绪提示</b><span id="bzStartupLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzStartup"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>实体按键确认</b><span id="bzKeyLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzKey"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>WiFi 配网提示</b><span id="bzNotifyLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzNotify"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>低电量按键提醒</b><span id="bzLowBatteryLabel">≤15% 时按键快响 5 下</span></span>
+                <span class="toggle"><input type="checkbox" id="bzLowBattery"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>OTA 升级结果</b><span id="bzOtaLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzOta"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>倒计时结束</b><span id="bzCountdownLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzCountdown"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>显示异常提示</b><span id="bzDisplayErrorLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzDisplayError"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>内容推送成功</b><span id="bzContentLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzContent"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>进入睡眠提示</b><span id="bzSleepLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="bzSleep"><span class="sl"></span></span>
+              </label>
+            </div>
+            <div class="compact-actions">
+              <button class="btn primary" onclick="saveBuzzer()">保存设置</button>
+              <button class="btn ghost sm" onclick="testBuzzer()">测试声音</button>
+            </div>
+            <div class="log" id="bzLog">加载中…</div>
+          </div>
+        </section>
+
         <section class="side-panel" id="backup">
           <div class="side-head">
             <div>
@@ -2611,13 +2679,113 @@ async function savePower(){
   });
 })();
 
+function bzLog(s,cls){const el=document.getElementById('bzLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+function clampBuzzerVolume(v){
+  v=parseInt(v,10);
+  if(isNaN(v)) v=40;
+  return Math.max(1,Math.min(100,v));
+}
+function setBuzzerLabel(id,on,onText){
+  var el=document.getElementById(id);
+  if(el) el.textContent=on?(onText||'已开启'):'已关闭';
+}
+function setBuzzerVolume(v){
+  v=clampBuzzerVolume(v);
+  var range=document.getElementById('bzVolume');
+  var num=document.getElementById('bzVolumeNum');
+  if(range) range.value=String(v);
+  if(num) num.value=String(v);
+  setText('bzVolumeText',v+'%');
+}
+function updateBuzzerLabels(){
+  setBuzzerLabel('bzEnabledLabel',document.getElementById('bzEnabled').checked);
+  setBuzzerLabel('bzStartupLabel',document.getElementById('bzStartup').checked);
+  setBuzzerLabel('bzKeyLabel',document.getElementById('bzKey').checked);
+  setBuzzerLabel('bzNotifyLabel',document.getElementById('bzNotify').checked);
+  setBuzzerLabel('bzLowBatteryLabel',document.getElementById('bzLowBattery').checked,'≤15% 时按键快响 5 下');
+  setBuzzerLabel('bzOtaLabel',document.getElementById('bzOta').checked);
+  setBuzzerLabel('bzCountdownLabel',document.getElementById('bzCountdown').checked);
+  setBuzzerLabel('bzDisplayErrorLabel',document.getElementById('bzDisplayError').checked);
+  setBuzzerLabel('bzContentLabel',document.getElementById('bzContent').checked);
+  setBuzzerLabel('bzSleepLabel',document.getElementById('bzSleep').checked);
+}
+
+async function loadBuzzer(){
+  try{
+    const r=await fetch('/buzzer_config',epdFetchOpts());const j=await r.json();
+    document.getElementById('bzEnabled').checked=!!j.enabled;
+    document.getElementById('bzStartup').checked=!!j.startup;
+    document.getElementById('bzKey').checked=!!j.key;
+    document.getElementById('bzNotify').checked=!!j.notify;
+    document.getElementById('bzLowBattery').checked=!!j.low_battery;
+    document.getElementById('bzOta').checked=!!j.ota;
+    document.getElementById('bzCountdown').checked=!!j.countdown;
+    document.getElementById('bzDisplayError').checked=!!j.display_error;
+    document.getElementById('bzContent').checked=!!j.content;
+    document.getElementById('bzSleep').checked=!!j.sleep;
+    setBuzzerVolume(j.volume||40);
+    updateBuzzerLabels();
+    if(!j.initialized) bzLog('蜂鸣器驱动未初始化，普通启动后会自动初始化。','warn');
+    else bzLog('已加载：音量 '+clampBuzzerVolume(j.volume||40)+'%。');
+  }catch(e){bzLog('加载失败: '+e,'bad');}
+}
+
+async function saveBuzzer(){
+  const cfg={
+    enabled:document.getElementById('bzEnabled').checked,
+    volume:clampBuzzerVolume(document.getElementById('bzVolumeNum').value),
+    startup:document.getElementById('bzStartup').checked,
+    key:document.getElementById('bzKey').checked,
+    notify:document.getElementById('bzNotify').checked,
+    low_battery:document.getElementById('bzLowBattery').checked,
+    ota:document.getElementById('bzOta').checked,
+    countdown:document.getElementById('bzCountdown').checked,
+    display_error:document.getElementById('bzDisplayError').checked,
+    content:document.getElementById('bzContent').checked,
+    sleep:document.getElementById('bzSleep').checked
+  };
+  setBuzzerVolume(cfg.volume);
+  updateBuzzerLabels();
+  bzLog('保存中…');
+  try{
+    const r=await fetch('/buzzer_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
+    const j=await r.json();
+    if(j.ok){bzLog('已保存：音量 '+cfg.volume+'%，设置重启后仍然生效。','ok');}
+    else bzLog('保存失败: '+(j.msg||r.status),'bad');
+  }catch(e){bzLog('请求失败: '+e,'bad');}
+}
+
+async function testBuzzer(){
+  const volume=clampBuzzerVolume(document.getElementById('bzVolumeNum').value);
+  setBuzzerVolume(volume);
+  bzLog('播放测试声…');
+  try{
+    const r=await fetch('/buzzer_test',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({volume})}));
+    const j=await r.json();
+    if(j.ok) bzLog('测试声已播放，当前音量 '+volume+'%。','ok');
+    else if(j.busy) bzLog('上一段提示音还没结束，稍后再试。','warn');
+    else bzLog('测试失败: '+(j.msg||r.status),'bad');
+  }catch(e){bzLog('请求失败: '+e,'bad');}
+}
+
+(function(){
+  var range=document.getElementById('bzVolume');
+  var num=document.getElementById('bzVolumeNum');
+  if(range) range.addEventListener('input',function(e){setBuzzerVolume(e.target.value);});
+  if(num) num.addEventListener('input',function(e){setBuzzerVolume(e.target.value);});
+  ['bzEnabled','bzStartup','bzKey','bzNotify','bzLowBattery','bzOta','bzCountdown','bzDisplayError','bzContent','bzSleep'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.addEventListener('change',updateBuzzerLabels);
+  });
+})();
+
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config'];
-    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power'];
+    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config'];
+    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -2640,7 +2808,7 @@ async function importConfig(input){
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
     var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config'};
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config'};
     var ok=0,fail=0;
     for(var key in map){
       if(!backup[key])continue;
@@ -2662,6 +2830,7 @@ async function initConfigPage(){
   await loadVersion();
   await loadAuth();
   await loadPower();
+  await loadBuzzer();
 }
 initConfigPage();
 // keep the live overview (memory / time / connection) fresh without noisy logs

@@ -44,9 +44,14 @@
 #include "spiffs_mount.h"
 #include "battery_mon.h"
 #include "ui_theme.h"
+#include "buzzer.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
+
+static void buzzer_beep_content_success(void);
+static void buzzer_beep_display_error(void);
+static void buzzer_beep_ota_result(bool ok);
 
 httpd_handle_t    http_server_handle;
 http_app_config_t http_app_cfg;
@@ -583,6 +588,7 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 
     cJSON *resp = cJSON_CreateObject();
     if (err == ESP_OK) {
+        (void)buzzer_beep_event(BUZZER_EVENT_NOTIFY, 4400, 2, 45, 70);
         esp_err_t ts_err = time_sync_init();
         if (ts_err != ESP_OK)
             ESP_LOGW(TAG, "time sync start after WiFi connect failed: %s", esp_err_to_name(ts_err));
@@ -591,6 +597,7 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
         cJSON_AddStringToObject(resp, "mdns_host", device_identity_get_mdns_hostname());
         cJSON_AddStringToObject(resp, "ap_ssid", wifi_manager_get_ap_ssid());
     } else {
+        (void)buzzer_beep_event(BUZZER_EVENT_NOTIFY, 2200, 3, 70, 90);
         cJSON_AddBoolToObject(resp, "ok", false);
         cJSON_AddStringToObject(resp, "msg", "Connection failed");
     }
@@ -739,6 +746,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
     if (!update) {
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"No OTA partition\"}");
@@ -746,6 +754,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     }
 
     if (req->content_len <= 0 || req->content_len > (int)update->size) {
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"Invalid firmware size\"}");
@@ -759,6 +768,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     esp_err_t err = esp_ota_begin(update, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"OTA begin failed\"}");
@@ -768,6 +778,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     char *buf = malloc(4096);
     if (!buf) {
         esp_ota_abort(handle);
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"malloc failed\"}");
@@ -803,6 +814,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
 
     if (failed) {
         esp_ota_abort(handle);
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"Firmware upload interrupted\"}");
@@ -812,6 +824,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     err = esp_ota_end(handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
+        buzzer_beep_ota_result(false);
         char msg[160];
         snprintf(msg, sizeof(msg),
                  "{\"ok\":false,\"msg\":\"Firmware validation failed: %s\"}",
@@ -825,6 +838,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     err = esp_ota_set_boot_partition(update);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_boot_partition failed: %s", esp_err_to_name(err));
+        buzzer_beep_ota_result(false);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"Set boot partition failed\"}");
@@ -837,6 +851,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true,\"msg\":\"OTA success, rebooting...\"}");
 
+    buzzer_beep_ota_result(true);
     xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
     return ESP_OK;
 }
@@ -938,6 +953,9 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_WEATHER);
         power_mgr_save_mode(DISPLAY_MODE_WEATHER);
+        buzzer_beep_content_success();
+    } else {
+        buzzer_beep_display_error();
     }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
@@ -1043,6 +1061,9 @@ static esp_err_t codex_quota_show_post_handler(httpd_req_t *req)
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_CODEX_QUOTA);
         power_mgr_save_mode(DISPLAY_MODE_CODEX_QUOTA);
+        buzzer_beep_content_success();
+    } else {
+        buzzer_beep_display_error();
     }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
@@ -1120,6 +1141,9 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_CLOCK);
         power_mgr_save_mode(DISPLAY_MODE_CLOCK);
+        buzzer_beep_content_success();
+    } else {
+        buzzer_beep_display_error();
     }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
@@ -1226,6 +1250,10 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
         message_board_wait_idle();
     if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
         err = ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK)
+        buzzer_beep_content_success();
+    else if (err != ESP_ERR_INVALID_STATE)
+        buzzer_beep_display_error();
     char json[112];
     snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
              err == ESP_OK ? "true" : "false",
@@ -1313,10 +1341,12 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     if (derr != ESP_OK) {
         if (!was_manual && display_policy_epoch_is_current(epoch))
             display_policy_set_manual_screen_active(false);
+        buzzer_beep_display_error();
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD display failed");
         return ESP_OK;
     }
     display_policy_set_manual_screen_active(true);
+    buzzer_beep_content_success();
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
@@ -1466,6 +1496,158 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
     }
     (void)wifi_manager_set_power_save_enabled(pc.enabled);
     httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
+static int buzzer_clamp_volume_int(int v)
+{
+    if (v < 1) return 1;
+    if (v > 100) return 100;
+    return v;
+}
+
+static void buzzer_beep_content_success(void)
+{
+    (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
+}
+
+static void buzzer_beep_display_error(void)
+{
+    (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
+}
+
+static void buzzer_beep_ota_result(bool ok)
+{
+    if (ok)
+        (void)buzzer_beep_event(BUZZER_EVENT_OTA, 4600, 2, 55, 70);
+    else
+        (void)buzzer_beep_event(BUZZER_EVENT_OTA, 2200, 3, 70, 80);
+}
+
+static esp_err_t buzzer_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    buzzer_config_t cfg;
+    buzzer_get_config(&cfg);
+
+    char buf[384];
+    snprintf(buf, sizeof(buf),
+             "{\"enabled\":%s,\"volume\":%u,\"startup\":%s,\"key\":%s,"
+             "\"notify\":%s,\"low_battery\":%s,\"ota\":%s,"
+             "\"countdown\":%s,\"display_error\":%s,\"content\":%s,"
+             "\"sleep\":%s,\"initialized\":%s,"
+             "\"running\":%s,\"pattern_running\":%s}",
+             cfg.enabled ? "true" : "false",
+             (unsigned)cfg.volume_percent,
+             cfg.startup_enabled ? "true" : "false",
+             cfg.key_enabled ? "true" : "false",
+             cfg.notify_enabled ? "true" : "false",
+             cfg.low_battery_enabled ? "true" : "false",
+             cfg.ota_enabled ? "true" : "false",
+             cfg.countdown_enabled ? "true" : "false",
+             cfg.display_error_enabled ? "true" : "false",
+             cfg.content_enabled ? "true" : "false",
+             cfg.sleep_enabled ? "true" : "false",
+             buzzer_is_initialized() ? "true" : "false",
+             buzzer_is_running() ? "true" : "false",
+             buzzer_pattern_is_running() ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, buf);
+    return ESP_OK;
+}
+
+static esp_err_t buzzer_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char body[512] = {0};
+    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        return ESP_OK;
+    }
+
+    buzzer_config_t cfg;
+    buzzer_get_config(&cfg);
+
+    cJSON *j = cJSON_GetObjectItem(root, "enabled");
+    if (j) cfg.enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "volume");
+    if (j && cJSON_IsNumber(j))
+        cfg.volume_percent = (uint8_t)buzzer_clamp_volume_int(j->valueint);
+    j = cJSON_GetObjectItem(root, "startup");
+    if (j) cfg.startup_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "key");
+    if (j) cfg.key_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "notify");
+    if (j) cfg.notify_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "low_battery");
+    if (j) cfg.low_battery_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "ota");
+    if (j) cfg.ota_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "countdown");
+    if (j) cfg.countdown_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "display_error");
+    if (j) cfg.display_error_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "content");
+    if (j) cfg.content_enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "sleep");
+    if (j) cfg.sleep_enabled = cJSON_IsTrue(j);
+
+    cJSON_Delete(root);
+
+    esp_err_t err = buzzer_set_config(&cfg);
+    httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 保存失败\"}");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
+static esp_err_t buzzer_test_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    buzzer_config_t cfg;
+    buzzer_get_config(&cfg);
+    int volume = cfg.volume_percent;
+
+    if (req->content_len > 0) {
+        char body[96] = {0};
+        if (!http_read_request_body(req, body, sizeof(body), "请求过长"))
+            return ESP_OK;
+        cJSON *root = cJSON_Parse(body);
+        if (root) {
+            cJSON *j = cJSON_GetObjectItem(root, "volume");
+            if (j && cJSON_IsNumber(j))
+                volume = buzzer_clamp_volume_int(j->valueint);
+            cJSON_Delete(root);
+        }
+    }
+
+    if (!buzzer_is_initialized()) {
+        esp_err_t init_err = buzzer_init();
+        if (init_err != ESP_OK) {
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"蜂鸣器未初始化\"}");
+            return ESP_OK;
+        }
+    }
+
+    esp_err_t err = buzzer_beep_pattern_ex(4000, 2, 55, 70, (uint8_t)volume);
+    char buf[96];
+    snprintf(buf, sizeof(buf), "{\"ok\":%s,\"busy\":%s}",
+             err == ESP_OK ? "true" : "false",
+             err == ESP_ERR_INVALID_STATE ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, buf);
     return ESP_OK;
 }
 
@@ -1819,6 +2001,9 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },
         { "/power_config",  HTTP_GET,  power_config_get_handler,   NULL },
         { "/power_config",  HTTP_POST, power_config_post_handler,  NULL },
+        { "/buzzer_config", HTTP_GET,  buzzer_config_get_handler,  NULL },
+        { "/buzzer_config", HTTP_POST, buzzer_config_post_handler, NULL },
+        { "/buzzer_test",   HTTP_POST, buzzer_test_post_handler,   NULL },
     };
     int registered = 0;
     for (int i = 0; i < (int)(sizeof(uris) / sizeof(uris[0])); i++) {

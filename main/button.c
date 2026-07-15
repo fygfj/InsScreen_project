@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 
+#include "battery_mon.h"
 #include "buzzer.h"
 #include "calendar_display.h"
 #include "display_mode.h"
@@ -41,6 +42,7 @@ static const char *TAG = "button";
 #define DEBOUNCE_MS     40
 #define DEBOUNCE_TICKS  (DEBOUNCE_MS / POLL_MS)
 #define WORKER_STACK    10240
+#define LOW_BATTERY_WARN_PERCENT 15
 
 typedef enum {
     CMD_NEXT = 0,
@@ -76,6 +78,16 @@ typedef struct {
 } debounce_t;
 
 static debounce_t s_db[BTN_COUNT];
+
+static bool low_battery_warning_needed(void)
+{
+    if (!buzzer_event_is_enabled(BUZZER_EVENT_LOW_BATTERY))
+        return false;
+
+    battery_status_t st = {0};
+    battery_mon_get_status(&st);
+    return st.valid && !st.charging && st.percent <= LOW_BATTERY_WARN_PERCENT;
+}
 
 /* display worker (runs on 10KB stack) */
 
@@ -174,15 +186,15 @@ static void on_press(int idx)
         return;
     }
 
-    /*
-     * 只有按键请求真正被接受时才响，显示忙而被忽略的按键不会响，
-     * 这样“听到声音”就等于“系统已经收到这次操作”。
-     * 左、中、右键使用略有区别的音调，方便不看屏幕也能确认按的是哪个键。
-     * 单次只响 30ms、25% 响度，对电池影响很小。
-     */
     if (buzzer_is_initialized()) {
         static const uint32_t key_tone_hz[BTN_COUNT] = { 3400, 4000, 4600 };
-        (void)buzzer_beep_pattern_ex(key_tone_hz[idx], 1, 30, 0, 25);
+        if (low_battery_warning_needed()) {
+            (void)buzzer_beep_event(BUZZER_EVENT_LOW_BATTERY,
+                                    2600, 5, 24, 32);
+        } else {
+            (void)buzzer_beep_event(BUZZER_EVENT_KEY,
+                                    key_tone_hz[idx], 1, 30, 0);
+        }
     }
 
     btn_cmd_t cmd;

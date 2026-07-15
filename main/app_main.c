@@ -808,11 +808,12 @@ static void full_boot(void)
 
     /*
      * 正常启动全部完成后响两声，告诉用户“系统已经可以使用”。
-     * 使用较低的 40% 响度和很短的 50ms 鸣叫，既能听清，又尽量省电、少扰人。
+     * 使用网页配置的响度和很短的 50ms 鸣叫，既能听清，又尽量省电、少扰人。
      * 这里使用非阻塞接口，所以蜂鸣期间不会卡住 Web 服务或墨水屏任务。
      */
-    if (buzzer_is_initialized()) {
-        esp_err_t beep_err = buzzer_beep_pattern_ex(4200, 2, 50, 80, 40);
+    if (buzzer_is_initialized() && buzzer_event_is_enabled(BUZZER_EVENT_STARTUP)) {
+        esp_err_t beep_err = buzzer_beep_event(BUZZER_EVENT_STARTUP,
+                                               4200, 2, 50, 80);
         if (beep_err != ESP_OK)
             ESP_LOGW(TAG, "Ready beep unavailable: %s", esp_err_to_name(beep_err));
     }

@@ -12,6 +12,7 @@
 #include "ui_theme.h"
 #include "nvs.h"
 #include "time_sync.h"
+#include "buzzer.h"
 #include "button.h"
 #include "display_mode.h"
 #include "power_mgr.h"
@@ -494,6 +495,7 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
 
     unsigned epoch = display_policy_begin_manual_display();
     if (!render_todo_snapshot(&snap, epoch)) {
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display canceled\"}");
         return ESP_OK;
@@ -501,6 +503,7 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
     display_policy_set_manual_screen_active(true);
     button_set_current_mode(DISPLAY_MODE_TODO);
     power_mgr_save_mode(DISPLAY_MODE_TODO);
+    (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");

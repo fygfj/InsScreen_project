@@ -16,6 +16,7 @@
 #include "esp_heap_caps.h"
 
 #include "clock_display.h"
+#include "buzzer.h"
 #include "display_policy.h"
 #include "epd.h"
 #include "fb_render.h"
@@ -334,6 +335,7 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
     if (derr != ESP_OK) {
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
             gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "墨水屏刷新失败");
         return ESP_OK;
@@ -350,6 +352,7 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     scheduler_notify_manual_show();
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
     power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+    (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }

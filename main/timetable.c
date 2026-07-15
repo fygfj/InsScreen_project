@@ -22,6 +22,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "time_sync.h"
+#include "buzzer.h"
 #include "button.h"
 #include "display_mode.h"
 #include "power_mgr.h"
@@ -1368,7 +1369,10 @@ esp_err_t timetable_show_http_handler(httpd_req_t *req)
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_TIMETABLE);
         power_mgr_save_mode(DISPLAY_MODE_TIMETABLE);
+        (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
     }
+    if (err != ESP_OK)
+        (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
 
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");

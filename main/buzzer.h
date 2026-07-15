@@ -19,6 +19,32 @@ extern "C" {
 #define BUZZER_DEFAULT_FREQUENCY_HZ  4000U
 #define BUZZER_DEFAULT_ON_TIME_MS     100U
 
+typedef struct {
+    bool enabled;
+    uint8_t volume_percent;
+    bool startup_enabled;
+    bool key_enabled;
+    bool notify_enabled;
+    bool low_battery_enabled;
+    bool ota_enabled;
+    bool countdown_enabled;
+    bool display_error_enabled;
+    bool content_enabled;
+    bool sleep_enabled;
+} buzzer_config_t;
+
+typedef enum {
+    BUZZER_EVENT_STARTUP = 0,
+    BUZZER_EVENT_KEY,
+    BUZZER_EVENT_NOTIFY,
+    BUZZER_EVENT_LOW_BATTERY,
+    BUZZER_EVENT_OTA,
+    BUZZER_EVENT_COUNTDOWN,
+    BUZZER_EVENT_DISPLAY_ERROR,
+    BUZZER_EVENT_CONTENT,
+    BUZZER_EVENT_SLEEP,
+} buzzer_event_t;
+
 /**
  * 初始化蜂鸣器驱动。
  *
@@ -60,6 +86,16 @@ bool buzzer_is_running(void);
 
 /** 获取当前音调频率；蜂鸣器停止时返回 0。 */
 uint32_t buzzer_get_frequency(void);
+
+esp_err_t buzzer_get_config(buzzer_config_t *out);
+esp_err_t buzzer_set_config(const buzzer_config_t *cfg);
+uint8_t buzzer_get_volume_percent(void);
+bool buzzer_event_is_enabled(buzzer_event_t event);
+esp_err_t buzzer_beep_event(buzzer_event_t event,
+                            uint32_t frequency_hz,
+                            uint32_t times,
+                            uint32_t on_time_ms,
+                            uint32_t gap_ms);
 
 /**
  * 按“次数、间隔、响度”播放一组短响（非阻塞）。
