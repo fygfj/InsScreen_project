@@ -40,6 +40,7 @@ idf_component_register(
         "canvas_board.c"
         "display_mode.c"
         "battery_mon.c"
+        "buzzer.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
@@ -69,6 +70,7 @@ idf_component_register(
         esp-tls
         esp_timer
         esp_adc
+        esp_driver_ledc
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

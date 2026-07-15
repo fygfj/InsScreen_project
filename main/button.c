@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 
+#include "buzzer.h"
 #include "calendar_display.h"
 #include "display_mode.h"
 #include "display_policy.h"
@@ -171,6 +172,17 @@ static void on_press(int idx)
     if (s_busy) {
         ESP_LOGW(TAG, "display busy, press ignored");
         return;
+    }
+
+    /*
+     * 只有按键请求真正被接受时才响，显示忙而被忽略的按键不会响，
+     * 这样“听到声音”就等于“系统已经收到这次操作”。
+     * 左、中、右键使用略有区别的音调，方便不看屏幕也能确认按的是哪个键。
+     * 单次只响 30ms、25% 响度，对电池影响很小。
+     */
+    if (buzzer_is_initialized()) {
+        static const uint32_t key_tone_hz[BTN_COUNT] = { 3400, 4000, 4600 };
+        (void)buzzer_beep_pattern_ex(key_tone_hz[idx], 1, 30, 0, 25);
     }
 
     btn_cmd_t cmd;
