@@ -43,6 +43,7 @@ idf_component_register(
         "buzzer.c"
         "i2c_bus.c"
         "aht20.c"
+        "sensor_local.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"

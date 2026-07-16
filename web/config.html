@@ -1708,6 +1708,10 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
         <span class="icon"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
         <span><b>低功耗</b><span>睡眠、唤醒、刷新间隔。</span></span>
       </a>
+      <a class="quick-card" href="#sensor">
+        <span class="icon"><svg viewBox="0 0 24 24"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/><path d="M10 9h4"/><path d="M10 6h4"/><path d="M18 8c1.4 1.5 2 3.1 2 4.8a4 4 0 0 1-8 0"/></svg></span>
+        <span><b>本地温湿度</b><span>AHT20 状态、读数和显示位置。</span></span>
+      </a>
       <a class="quick-card" href="#ota">
         <span class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
         <span><b>备份与 OTA</b><span>导入导出配置、升级固件。</span></span>
@@ -2026,6 +2030,49 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
               <button class="btn ghost sm" onclick="testBuzzer()">测试声音</button>
             </div>
             <div class="log" id="bzLog">加载中…</div>
+          </div>
+        </section>
+
+        <section class="side-panel" id="sensor">
+          <div class="side-head">
+            <div>
+              <h2>本地温湿度</h2>
+              <p>AHT20 室内温湿度状态和显示位置。</p>
+            </div>
+          </div>
+          <div class="side-body">
+            <label class="switch-row">
+              <span><b>启用传感器</b><span id="senEnabledLabel">已开启</span></span>
+              <span class="toggle"><input type="checkbox" id="senEnabled"><span class="sl"></span></span>
+            </label>
+            <div class="switch-list">
+              <label class="switch-row">
+                <span><b>显示到时钟页</b><span id="senClockLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="senClock"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>显示到天气页</b><span id="senWeatherLabel">已开启</span></span>
+                <span class="toggle"><input type="checkbox" id="senWeather"><span class="sl"></span></span>
+              </label>
+              <label class="switch-row">
+                <span><b>显示到日历页</b><span id="senCalendarLabel">已关闭</span></span>
+                <span class="toggle"><input type="checkbox" id="senCalendar"><span class="sl"></span></span>
+              </label>
+            </div>
+            <div class="kv">
+              <div class="k">模块状态</div><div class="v" id="senStatus">-</div>
+              <div class="k">温度</div><div class="v" id="senTemp">-</div>
+              <div class="k">湿度</div><div class="v" id="senHumidity">-</div>
+              <div class="k">数据年龄</div><div class="v" id="senAge">-</div>
+              <div class="k">I2C</div><div class="v" id="senPins">SDA GPIO1 / SCL GPIO2 / 0x38</div>
+              <div class="k">最后错误</div><div class="v" id="senError">-</div>
+            </div>
+            <div class="compact-actions">
+              <button class="btn primary" onclick="saveSensorConfig()">保存设置</button>
+              <button class="btn ghost sm" onclick="readSensorNow()">立即读取</button>
+              <button class="btn ghost sm" onclick="loadSensorStatus()">刷新状态</button>
+            </div>
+            <div class="log" id="senLog">加载中…</div>
           </div>
         </section>
 
@@ -2779,13 +2826,98 @@ async function testBuzzer(){
   });
 })();
 
+function senLog(s,cls){const el=document.getElementById('senLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+function setSensorLabel(id,on){
+  var el=document.getElementById(id);
+  if(el) el.textContent=on?'已开启':'已关闭';
+}
+function updateSensorLabels(){
+  setSensorLabel('senEnabledLabel',document.getElementById('senEnabled').checked);
+  setSensorLabel('senClockLabel',document.getElementById('senClock').checked);
+  setSensorLabel('senWeatherLabel',document.getElementById('senWeather').checked);
+  setSensorLabel('senCalendarLabel',document.getElementById('senCalendar').checked);
+}
+function sensorAgeText(ms){
+  if(ms===undefined||ms===null||ms<0) return '-';
+  if(ms<1000) return '刚刚';
+  var sec=Math.round(ms/1000);
+  if(sec<60) return sec+' 秒';
+  var min=Math.round(sec/60);
+  if(min<60) return min+' 分钟';
+  return Math.round(min/60)+' 小时';
+}
+function sensorStatusText(j){
+  if(!j.enabled) return '已关闭';
+  if(j.valid) return j.calibrated?'在线':'在线，未校准';
+  if(j.present) return '已检测，数据无效';
+  return '未检测到';
+}
+function updateSensorStatus(j){
+  setText('senStatus',sensorStatusText(j));
+  setText('senTemp',j.valid?(Number(j.temperature_c).toFixed(1)+' °C'):'-');
+  setText('senHumidity',j.valid?(Number(j.humidity_percent).toFixed(1)+' %'):'-');
+  setText('senAge',sensorAgeText(j.age_ms));
+  var sda=(j.sda_gpio===undefined||j.sda_gpio===null)?1:j.sda_gpio;
+  var scl=(j.scl_gpio===undefined||j.scl_gpio===null)?2:j.scl_gpio;
+  setText('senPins','SDA GPIO'+sda+' / SCL GPIO'+scl+' / '+(j.i2c_addr||'0x38'));
+  setText('senError',j.last_error||'-');
+  if(!j.enabled) senLog('传感器已关闭，显示页不会读取。','warn');
+  else if(j.valid) senLog('读数正常：'+Number(j.temperature_c).toFixed(1)+' °C / '+Number(j.humidity_percent).toFixed(1)+'%。','ok');
+  else senLog('未读到有效数据'+(j.last_error?': '+j.last_error:''),'bad');
+}
+async function loadSensorConfig(){
+  try{
+    const r=await fetch('/sensor_config',epdFetchOpts());const j=await r.json();
+    document.getElementById('senEnabled').checked=!!j.enabled;
+    document.getElementById('senClock').checked=!!j.show_on_clock;
+    document.getElementById('senWeather').checked=!!j.show_on_weather;
+    document.getElementById('senCalendar').checked=!!j.show_on_calendar;
+    updateSensorLabels();
+  }catch(e){senLog('配置加载失败: '+e,'bad');}
+}
+async function loadSensorStatus(){
+  try{
+    const r=await fetch('/sensor_status',epdFetchOpts());const j=await r.json();
+    updateSensorStatus(j);
+  }catch(e){senLog('状态读取失败: '+e,'bad');}
+}
+async function saveSensorConfig(){
+  const cfg={
+    enabled:document.getElementById('senEnabled').checked,
+    show_on_clock:document.getElementById('senClock').checked,
+    show_on_weather:document.getElementById('senWeather').checked,
+    show_on_calendar:document.getElementById('senCalendar').checked
+  };
+  updateSensorLabels();
+  senLog('保存中…');
+  try{
+    const r=await fetch('/sensor_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
+    const j=await r.json();
+    if(j.ok){senLog('已保存，本地温湿度显示位置已更新。','ok');await loadSensorStatus();}
+    else senLog('保存失败: '+(j.msg||r.status),'bad');
+  }catch(e){senLog('请求失败: '+e,'bad');}
+}
+async function readSensorNow(){
+  senLog('正在读取 AHT20…');
+  try{
+    const r=await fetch('/sensor_read',epdFetchOpts({method:'POST'}));const j=await r.json();
+    updateSensorStatus(j);
+  }catch(e){senLog('读取失败: '+e,'bad');}
+}
+(function(){
+  ['senEnabled','senClock','senWeather','senCalendar'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.addEventListener('change',updateSensorLabels);
+  });
+})();
+
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config'];
-    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer'];
+    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
+    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -2808,7 +2940,7 @@ async function importConfig(input){
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
     var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config'};
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config',sensor:'/sensor_config'};
     var ok=0,fail=0;
     for(var key in map){
       if(!backup[key])continue;
@@ -2831,6 +2963,8 @@ async function initConfigPage(){
   await loadAuth();
   await loadPower();
   await loadBuzzer();
+  await loadSensorConfig();
+  await loadSensorStatus();
 }
 initConfigPage();
 // keep the live overview (memory / time / connection) fresh without noisy logs

@@ -29,6 +29,7 @@
 #include "display_mode.h"
 #include "battery_mon.h"
 #include "buzzer.h"
+#include "sensor_local.h"
 #include "button.h"
 #include "fb_render.h"
 #include "font_ext.h"
@@ -678,6 +679,9 @@ static void full_boot(void)
     display_policy_init();
     font_ext_init();
     device_identity_init();
+
+    if (sensor_local_init() != ESP_OK)
+        ESP_LOGW(TAG, "Local temperature/humidity sensor unavailable");
 
     ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
                                       device_identity_get_ap_password()));

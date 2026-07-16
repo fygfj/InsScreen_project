@@ -45,6 +45,7 @@
 #include "battery_mon.h"
 #include "ui_theme.h"
 #include "buzzer.h"
+#include "sensor_local.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -1651,6 +1652,141 @@ static esp_err_t buzzer_test_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static cJSON *sensor_status_json(void)
+{
+    sensor_local_data_t data = {0};
+    sensor_local_get_data(&data);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+        return NULL;
+
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddBoolToObject(root, "enabled", data.enabled);
+    cJSON_AddBoolToObject(root, "present", data.present);
+    cJSON_AddBoolToObject(root, "valid", data.valid);
+    cJSON_AddBoolToObject(root, "calibrated", data.calibrated);
+    if (data.valid) {
+        cJSON_AddNumberToObject(root, "temperature_c", data.temperature_c);
+        cJSON_AddNumberToObject(root, "humidity_percent", data.humidity_percent);
+    } else {
+        cJSON_AddNullToObject(root, "temperature_c");
+        cJSON_AddNullToObject(root, "humidity_percent");
+    }
+    cJSON_AddNumberToObject(root, "updated_ms", (double)data.updated_ms);
+    cJSON_AddNumberToObject(root, "age_ms", (double)data.age_ms);
+    cJSON_AddNumberToObject(root, "sda_gpio", SENSOR_LOCAL_SDA_GPIO);
+    cJSON_AddNumberToObject(root, "scl_gpio", SENSOR_LOCAL_SCL_GPIO);
+    char addr_buf[24];
+    uint8_t addr = data.i2c_addr ? data.i2c_addr : SENSOR_LOCAL_I2C_ADDR;
+    snprintf(addr_buf, sizeof(addr_buf), "0x%02X", addr);
+    cJSON_AddStringToObject(root, "i2c_addr", addr_buf);
+    cJSON_AddStringToObject(root, "i2c_candidates", "0x38,0x39");
+    cJSON_AddStringToObject(root, "last_error",
+                            sensor_local_error_name(data.last_error));
+    cJSON_AddNumberToObject(root, "status", data.status);
+    return root;
+}
+
+static esp_err_t sensor_send_status(httpd_req_t *req)
+{
+    cJSON *root = sensor_status_json();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_OK;
+    }
+
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, str);
+    free(str);
+    return ESP_OK;
+}
+
+static esp_err_t sensor_status_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    return sensor_send_status(req);
+}
+
+static esp_err_t sensor_read_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    sensor_local_data_t data = {0};
+    esp_err_t err = sensor_local_read_now(&data);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "sensor manual read failed: %s",
+                 sensor_local_error_name(err));
+    }
+    return sensor_send_status(req);
+}
+
+static esp_err_t sensor_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    sensor_local_config_t cfg = {0};
+    sensor_local_get_config(&cfg);
+
+    char buf[160];
+    snprintf(buf, sizeof(buf),
+             "{\"enabled\":%s,\"show_on_clock\":%s,"
+             "\"show_on_weather\":%s,\"show_on_calendar\":%s}",
+             cfg.enabled ? "true" : "false",
+             cfg.show_on_clock ? "true" : "false",
+             cfg.show_on_weather ? "true" : "false",
+             cfg.show_on_calendar ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, buf);
+    return ESP_OK;
+}
+
+static esp_err_t sensor_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char body[256] = {0};
+    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        return ESP_OK;
+    }
+
+    sensor_local_config_t cfg = {0};
+    sensor_local_get_config(&cfg);
+
+    cJSON *j = cJSON_GetObjectItem(root, "enabled");
+    if (j) cfg.enabled = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "show_on_clock");
+    if (j) cfg.show_on_clock = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "show_on_weather");
+    if (j) cfg.show_on_weather = cJSON_IsTrue(j);
+    j = cJSON_GetObjectItem(root, "show_on_calendar");
+    if (j) cfg.show_on_calendar = cJSON_IsTrue(j);
+
+    cJSON_Delete(root);
+
+    esp_err_t err = sensor_local_set_config(&cfg);
+    httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS save failed\"}");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
 /* countdown handlers moved to http_features.c */
 
 /* ── session open hook (reset inactivity timer) ───────────────────── */
@@ -1910,7 +2046,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 8;
     config.send_wait_timeout  = 15;
-    config.max_uri_handlers   = 80;
+    config.max_uri_handlers   = 90;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
@@ -2004,6 +2140,10 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/buzzer_config", HTTP_GET,  buzzer_config_get_handler,  NULL },
         { "/buzzer_config", HTTP_POST, buzzer_config_post_handler, NULL },
         { "/buzzer_test",   HTTP_POST, buzzer_test_post_handler,   NULL },
+        { "/sensor_status", HTTP_GET,  sensor_status_get_handler,  NULL },
+        { "/sensor_read",   HTTP_POST, sensor_read_post_handler,   NULL },
+        { "/sensor_config", HTTP_GET,  sensor_config_get_handler,  NULL },
+        { "/sensor_config", HTTP_POST, sensor_config_post_handler, NULL },
     };
     int registered = 0;
     for (int i = 0; i < (int)(sizeof(uris) / sizeof(uris[0])); i++) {

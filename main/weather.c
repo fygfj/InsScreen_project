@@ -32,6 +32,7 @@
 #include "power_mgr.h"
 #include "ui_theme.h"
 #include "weather_icons_qw.h"
+#include "sensor_local.h"
 
 static const char *TAG    = "weather";
 static const char *NVS_NS = "weather";
@@ -92,6 +93,9 @@ typedef struct {
 } weather_temp_history_store_t;
 
 static weather_temp_history_store_t s_temp_history;
+
+static bool weather_draw_local_sensor(fb_t *fb, int x, int y, int max_w,
+                                      fb_color_t color, int text_px);
 
 static void weather_config_snapshot(weather_config_t *out)
 {
@@ -1167,7 +1171,6 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
         range_w = w - 44;
     ui_draw_fixed_text_maxw(fb, x + 28, y + h - 28, range,
                             COLOR_BLACK, 1, range_w);
-
     const char *city = (cfg && cfg->city_name[0]) ? cfg->city_name : "";
     (void)city; /* City/date already lives in the page header on the large layout. */
 
@@ -1195,6 +1198,8 @@ static void draw_metric_deck(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x + 8, y + 7,
                           "\xe6\xb0\x94\xe8\xb1\xa1\xe6\x8c\x87\xe6\xa0\x87",
                           COLOR_BLACK, 1);
+    (void)weather_draw_local_sensor(fb, x + 118, y + 7,
+                                    w - 130, COLOR_BLACK, 16);
 
     char feels_value[24];
     char humidity_value[24];
@@ -1697,7 +1702,6 @@ static void draw_weather_583_current(fb_t *fb, int x, int y, int w, int h,
     fb_fill_rect(fb, temp_x, y + 105, 38, 3, COLOR_RED);
     ui_draw_text_px_maxw(fb, temp_x, y + 116, wd->now.text,
                          COLOR_RED, 18, w - (temp_x - x) - 12);
-
     char range[48];
     snprintf(range, sizeof(range),
              "\xe4\xbb\x8a\xe6\x97\xa5 %d/%d\xc2\xb0",
@@ -1718,6 +1722,8 @@ static void draw_weather_583_metrics(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x + 10, y + 8,
                           "\xe6\xb0\x94\xe8\xb1\xa1\xe6\x8c\x87\xe6\xa0\x87",
                           COLOR_BLACK, 1);
+    (void)weather_draw_local_sensor(fb, x + 118, y + 8,
+                                    w - 130, COLOR_BLACK, 16);
 
     char feels_value[20];
     char humidity_value[20];
@@ -1882,8 +1888,11 @@ static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
     char summary[48];
     snprintf(summary, sizeof(summary), "%s  %d/%d\xc2\xb0",
              wd->now.text, today_high, today_low);
-    ui_draw_fixed_text_maxw(fb, temp_x, top_y + 75, summary,
+    ui_draw_fixed_text_maxw(fb, temp_x, top_y + 67, summary,
                             COLOR_RED, 1, metric_x - temp_x - 8);
+    (void)weather_draw_local_sensor(fb, temp_x, top_y + 84,
+                                    metric_x - temp_x - 8,
+                                    COLOR_BLACK, 16);
 
     ui_draw_dotted_vline(fb, metric_x - 10, top_y + 16,
                          top_h - 30, COLOR_BLACK, 6);
@@ -1962,6 +1971,46 @@ static const char *weather_footer_tip(const weather_data_t *wd)
         return "\xe7\xa9\xba\xe6\xb0\x94\xe5\xb9\xb2\xe7\x87\xa5 \xe5\xa4\x9a\xe9\xa5\xae\xe6\xb0\xb4";
 
     return "\xe5\xa4\xa9\xe6\xb0\x94\xe5\xb7\xb2\xe6\x9b\xb4\xe6\x96\xb0";
+}
+
+static bool weather_local_sensor_line(char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return false;
+
+    sensor_local_config_t cfg = {0};
+    if (sensor_local_get_config(&cfg) != ESP_OK ||
+        !cfg.enabled || !cfg.show_on_weather) {
+        return false;
+    }
+
+    (void)sensor_local_ensure_fresh(SENSOR_LOCAL_DISPLAY_MAX_AGE_MS);
+
+    sensor_local_data_t data = {0};
+    if (sensor_local_get_data(&data) != ESP_OK || !data.valid)
+        return false;
+
+    snprintf(out, out_sz,
+             "\xe5\xae\xa4\xe5\x86\x85 %.1f\xc2\xb0""C / %.0f%%",
+             data.temperature_c, data.humidity_percent);
+    return true;
+}
+
+static bool weather_draw_local_sensor(fb_t *fb, int x, int y, int max_w,
+                                      fb_color_t color, int text_px)
+{
+    if (!fb || max_w <= 0)
+        return false;
+
+    char line[64];
+    if (!weather_local_sensor_line(line, sizeof(line)))
+        return false;
+
+    if (text_px >= 24)
+        ui_draw_text_px_maxw(fb, x, y, line, color, text_px, max_w);
+    else
+        ui_draw_fixed_text_maxw(fb, x, y, line, color, 1, max_w);
+    return true;
 }
 
 static esp_err_t render_weather_unavailable(void)
@@ -2063,7 +2112,7 @@ static void render_weather(unsigned epoch)
         draw_compact_weather_page(fb, W, H, MX, &s_data);
     }
 
-    char footer_left[80];
+    char footer_left[96];
     snprintf(footer_left, sizeof(footer_left), "\xe6\xb0\x94\xe8\xb1\xa1  %s",
              weather_footer_tip(&s_data));
     ui_draw_footer(fb, footer_left, s_data.update_time);

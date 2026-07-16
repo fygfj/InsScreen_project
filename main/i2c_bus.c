@@ -2,6 +2,7 @@
 
 #include <stdatomic.h>
 
+#include "driver/rtc_io.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -19,6 +20,23 @@ static SemaphoreHandle_t i2c_bus_lock(void)
     return s_lock;
 }
 
+static void i2c_bus_restore_pin(gpio_num_t gpio)
+{
+    if (rtc_gpio_is_valid_gpio(gpio))
+        (void)rtc_gpio_hold_dis(gpio);
+    (void)gpio_reset_pin(gpio);
+    if (rtc_gpio_is_valid_gpio(gpio))
+        (void)rtc_gpio_deinit(gpio);
+}
+
+static void i2c_bus_float_pin(gpio_num_t gpio)
+{
+    (void)gpio_set_direction(gpio, GPIO_MODE_DISABLE);
+    (void)gpio_set_pull_mode(gpio, GPIO_FLOATING);
+    if (rtc_gpio_is_valid_gpio(gpio))
+        (void)rtc_gpio_isolate(gpio);
+}
+
 esp_err_t i2c_bus_init(void)
 {
     if (atomic_load(&s_initialized))
@@ -33,6 +51,9 @@ esp_err_t i2c_bus_init(void)
         xSemaphoreGive(lock);
         return ESP_OK;
     }
+
+    i2c_bus_restore_pin(I2C_BUS_SDA_GPIO);
+    i2c_bus_restore_pin(I2C_BUS_SCL_GPIO);
 
     const i2c_master_bus_config_t cfg = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -96,4 +117,23 @@ esp_err_t i2c_bus_add_device(uint16_t address,
         .scl_speed_hz = speed_hz ? speed_hz : I2C_BUS_SPEED_HZ,
     };
     return i2c_master_bus_add_device(bus, &dev_cfg, out_dev);
+}
+
+esp_err_t i2c_bus_prepare_sleep(void)
+{
+    SemaphoreHandle_t lock = i2c_bus_lock();
+    if (!lock)
+        return ESP_ERR_NO_MEM;
+
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (s_bus)
+        (void)i2c_master_bus_wait_all_done(s_bus, 100);
+
+    i2c_bus_float_pin(I2C_BUS_SDA_GPIO);
+    i2c_bus_float_pin(I2C_BUS_SCL_GPIO);
+    ESP_LOGI(TAG, "sleep: SDA GPIO%d, SCL GPIO%d floated/isolated",
+             (int)I2C_BUS_SDA_GPIO, (int)I2C_BUS_SCL_GPIO);
+
+    xSemaphoreGive(lock);
+    return ESP_OK;
 }

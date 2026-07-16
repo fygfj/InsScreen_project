@@ -23,6 +23,7 @@ esp_err_t i2c_bus_probe(uint16_t address, int timeout_ms);
 esp_err_t i2c_bus_add_device(uint16_t address,
                              uint32_t speed_hz,
                              i2c_master_dev_handle_t *out_dev);
+esp_err_t i2c_bus_prepare_sleep(void);
 
 #ifdef __cplusplus
 }

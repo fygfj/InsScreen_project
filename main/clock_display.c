@@ -23,6 +23,7 @@
 #include "ui_theme.h"
 #include "calendar_display.h"
 #include "battery_mon.h"
+#include "sensor_local.h"
 
 /* 摘要区占位（无有效天气数据时） */
 static const char k_wx_placeholder_l1[] =
@@ -240,6 +241,53 @@ static int clock_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
     return ui_draw_fixed_text_maxw(fb, x, y, s, color, scale, max_w);
 }
 
+static bool clock_local_sensor_line(char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return false;
+
+    sensor_local_config_t cfg = {0};
+    if (sensor_local_get_config(&cfg) != ESP_OK ||
+        !cfg.enabled || !cfg.show_on_clock) {
+        return false;
+    }
+
+    (void)sensor_local_ensure_fresh(SENSOR_LOCAL_DISPLAY_MAX_AGE_MS);
+
+    sensor_local_data_t data = {0};
+    if (sensor_local_get_data(&data) != ESP_OK || !data.valid)
+        return false;
+
+    snprintf(out, out_sz,
+             "\xe5\xae\xa4\xe5\x86\x85 %.1f\xc2\xb0""C / %.0f%%",
+             data.temperature_c, data.humidity_percent);
+    return true;
+}
+
+static void clock_draw_sensor_text(fb_t *fb, int x, int y,
+                                   const char *line, int max_w,
+                                   fb_color_t color)
+{
+    if (!fb || !line || !line[0] || max_w <= 0)
+        return;
+
+    clock_draw_text_maxw(fb, x, y, line, color, 1, max_w);
+}
+
+static bool clock_draw_local_sensor_at(fb_t *fb, int x, int y,
+                                       int max_w, fb_color_t color)
+{
+    if (!fb || max_w <= 0)
+        return false;
+
+    char line[64];
+    if (!clock_local_sensor_line(line, sizeof(line)))
+        return false;
+
+    clock_draw_sensor_text(fb, x, y, line, max_w, color);
+    return true;
+}
+
 static void clock_draw_footer(fb_t *fb, const char *left, const char *right)
 {
     ui_draw_footer(fb, left, right);
@@ -430,6 +478,10 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     clock_draw_text_maxw(fb, info_x, card_y + 50, tag,
                          time_sync_is_synced() ? COLOR_BLACK : COLOR_RED,
                          1, info_w);
+    int sensor_y = card_y + card_h + 7;
+    if (sensor_y < fb->height - 26)
+        (void)clock_draw_local_sensor_at(fb, card_x, sensor_y, card_w,
+                                         COLOR_BLACK);
 }
 
 static void nvs_load(void)
@@ -640,6 +692,9 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                                   COLOR_BLACK, 1, W - right_x - MX);
             clock_draw_text_maxw(fb, right_x, current_y + 40, wind,
                                   COLOR_BLACK, 1, W - right_x - MX);
+            (void)clock_draw_local_sensor_at(fb, left_x, current_y + 49,
+                                             split_x - left_x - 10,
+                                             COLOR_BLACK);
 
             int dot_y = current_y + 66;
             ui_draw_dotted_hline(fb, MX + 10, dot_y, W - 2 * MX - 20,
@@ -722,7 +777,16 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             int lx2 = W * 80 / 648;
             int lw2 = W - lx2 - MX - 8;
             if (lw2 < 24) lw2 = 24;
-            clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap, line2, COLOR_BLACK, wx_head_sc, lw2);
+            char sensor_line[64];
+            if (clock_local_sensor_line(sensor_line, sizeof(sensor_line))) {
+                clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap,
+                                     line2, COLOR_BLACK, 1, lw2);
+                clock_draw_sensor_text(fb, lx2, bot_y + wx_head_gap + 20,
+                                       sensor_line, lw2, COLOR_BLACK);
+            } else {
+                clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap,
+                                     line2, COLOR_BLACK, wx_head_sc, lw2);
+            }
         }
 
         int dot_y = bot_y + 2 * wx_head_gap + 2;
@@ -816,10 +880,17 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                             ampm, COLOR_BLACK, ampm_sc);
             clock_draw_text(fb, (W - tw) / 2, card_y + (is_583 ? 72 : 48), tag,
                             time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
+            int sensor_y = card_y + card_h + (is_583 ? 8 : 7);
+            if (sensor_y < H - 22)
+                (void)clock_draw_local_sensor_at(fb, card_x + 12, sensor_y,
+                                                 card_w - 24, COLOR_BLACK);
         } else {
             ui_draw_dotted_hline(fb, W / 2 - 70, bot_y + 30, 140, COLOR_BLACK, 6);
             int aw = clock_text_px(ampm, sc);
             clock_draw_text(fb, (W - aw) / 2, bot_y + 50, ampm, COLOR_BLACK, sc);
+            (void)clock_draw_local_sensor_at(fb, W / 2 - 120,
+                                             bot_y + 50 + 20 * sc,
+                                             240, COLOR_BLACK);
         }
     }
 
@@ -828,6 +899,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                           cfg_local.show_weather ? "\xe5\xa4\xa9\xe6\xb0\x94" : "\xe6\x97\xb6\xe9\x97\xb4");
 
 clock_render_done:
+
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
         if (s_render_mutex)

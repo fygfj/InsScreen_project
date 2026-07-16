@@ -8,6 +8,7 @@
 #include "epd.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "i2c_bus.h"
 #include "hal/usb_serial_jtag_ll.h"
 #include "esp_timer.h"
 #include "nvs.h"
@@ -342,6 +343,7 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
             vTaskDelay(pdMS_TO_TICKS(90));
     }
     nvs_flush_all();
+    i2c_bus_prepare_sleep();
     usb_serial_jtag_ll_phy_enable_pad(false);  // 关闭 USB PHY，避免深睡眠漏电
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
