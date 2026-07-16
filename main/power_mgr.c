@@ -343,7 +343,17 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
             vTaskDelay(pdMS_TO_TICKS(90));
     }
     nvs_flush_all();
-    i2c_bus_prepare_sleep();
+    esp_err_t i2c_err = i2c_bus_prepare_sleep();
+    if (i2c_err != ESP_OK) {
+        /*
+         * I2C 还没有安全停稳时不强行休眠，否则可能在传感器读取到一半时
+         * 隔离 SDA/SCL。重置活动时间，稍后由低功耗任务再次尝试。
+         */
+        ESP_LOGE(TAG, "Sleep cancelled: I2C bus is not ready: %s",
+                 esp_err_to_name(i2c_err));
+        power_mgr_reset_activity();
+        return;
+    }
     usb_serial_jtag_ll_phy_enable_pad(false);  // 关闭 USB PHY，避免深睡眠漏电
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();

@@ -12,6 +12,7 @@ static const char *TAG = "i2c_bus";
 static i2c_master_bus_handle_t s_bus;
 static SemaphoreHandle_t s_lock;
 static atomic_bool s_initialized;
+static atomic_bool s_sleep_preparing;
 
 static SemaphoreHandle_t i2c_bus_lock(void)
 {
@@ -119,15 +120,59 @@ esp_err_t i2c_bus_add_device(uint16_t address,
     return i2c_master_bus_add_device(bus, &dev_cfg, out_dev);
 }
 
+esp_err_t i2c_bus_begin_operation(void)
+{
+    /*
+     * 先完成总线初始化，再取得操作锁。i2c_bus_init() 本身也使用同一把锁，
+     * 如果顺序反过来会造成任务等待自己释放锁。
+     */
+    esp_err_t err = i2c_bus_init();
+    if (err != ESP_OK)
+        return err;
+
+    SemaphoreHandle_t lock = i2c_bus_lock();
+    if (!lock)
+        return ESP_ERR_NO_MEM;
+
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (atomic_load(&s_sleep_preparing)) {
+        /* 休眠准备已经开始，拒绝新操作，避免重新驱动已隔离的引脚。 */
+        xSemaphoreGive(lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+
+void i2c_bus_end_operation(void)
+{
+    /* 只有 begin 成功的调用者才会执行到这里，因此 s_lock 一定已经创建。 */
+    if (s_lock)
+        xSemaphoreGive(s_lock);
+}
+
 esp_err_t i2c_bus_prepare_sleep(void)
 {
     SemaphoreHandle_t lock = i2c_bus_lock();
     if (!lock)
         return ESP_ERR_NO_MEM;
 
+    /*
+     * 等待正在进行的完整操作结束。取得锁后立刻设置休眠标志，之后排队的
+     * begin_operation() 会被拒绝，不能在检查完成后又启动一次新传输。
+     */
     xSemaphoreTake(lock, portMAX_DELAY);
-    if (s_bus)
-        (void)i2c_master_bus_wait_all_done(s_bus, 100);
+    atomic_store(&s_sleep_preparing, true);
+
+    if (s_bus) {
+        esp_err_t err = i2c_master_bus_wait_all_done(s_bus, 100);
+        if (err != ESP_OK) {
+            atomic_store(&s_sleep_preparing, false);
+            xSemaphoreGive(lock);
+            ESP_LOGE(TAG, "cannot prepare sleep, I2C still busy: %s",
+                     esp_err_to_name(err));
+            return err;
+        }
+    }
 
     i2c_bus_float_pin(I2C_BUS_SDA_GPIO);
     i2c_bus_float_pin(I2C_BUS_SCL_GPIO);

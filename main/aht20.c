@@ -136,7 +136,8 @@ static esp_err_t ahtx0_calibrate(uint8_t init_cmd)
     return ESP_OK;
 }
 
-esp_err_t aht20_init(void)
+/* 调用本函数前必须已经通过 i2c_bus_begin_operation() 取得总线操作锁。 */
+static esp_err_t aht20_init_locked(void)
 {
     if (atomic_load(&s_initialized))
         return ESP_OK;
@@ -181,6 +182,17 @@ esp_err_t aht20_init(void)
     return ESP_OK;
 }
 
+esp_err_t aht20_init(void)
+{
+    esp_err_t err = i2c_bus_begin_operation();
+    if (err != ESP_OK)
+        return err;
+
+    err = aht20_init_locked();
+    i2c_bus_end_operation();
+    return err;
+}
+
 bool aht20_is_initialized(void)
 {
     return atomic_load(&s_initialized);
@@ -193,52 +205,53 @@ uint8_t aht20_get_address(void)
 
 esp_err_t aht20_probe(void)
 {
-    return ahtx0_probe_and_add();
+    esp_err_t err = i2c_bus_begin_operation();
+    if (err != ESP_OK)
+        return err;
+
+    err = ahtx0_probe_and_add();
+    i2c_bus_end_operation();
+    return err;
 }
 
 esp_err_t aht20_soft_reset(void)
 {
-    const uint8_t cmd = AHTX0_CMD_SOFT_RESET;
-    esp_err_t err = ahtx0_write_cmd(&cmd, 1);
+    esp_err_t err = i2c_bus_begin_operation();
     if (err != ESP_OK)
         return err;
 
+    const uint8_t cmd = AHTX0_CMD_SOFT_RESET;
+    err = ahtx0_write_cmd(&cmd, 1);
+    if (err != ESP_OK) {
+        i2c_bus_end_operation();
+        return err;
+    }
+
     atomic_store(&s_initialized, false);
     vTaskDelay(pdMS_TO_TICKS(20));
-    return aht20_init();
+    err = aht20_init_locked();
+    i2c_bus_end_operation();
+    return err;
 }
 
-static esp_err_t ahtx0_read_measurement_frame(uint8_t data[7], size_t *len)
+static esp_err_t ahtx0_read_measurement_frame(uint8_t data[7])
 {
-    if (!data || !len)
+    if (!data)
         return ESP_ERR_INVALID_ARG;
 
     memset(data, 0, 7);
 
-    esp_err_t err = ahtx0_read_direct(data, 6);
-    if (err == ESP_OK) {
-        *len = 6;
-        return ESP_OK;
-    }
-
-    esp_err_t cmd_err = ahtx0_read_with_status_cmd(data, 7);
-    if (cmd_err == ESP_OK) {
-        *len = 7;
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG, "measurement read failed: direct=%s 0x71=%s",
-             esp_err_to_name(err), esp_err_to_name(cmd_err));
-    return err;
+    /*
+     * AHT20 的测量帧固定为 7 字节：前 6 字节是状态和温湿度原始值，
+     * 第 7 字节是 CRC。必须把 CRC 一起读取，不能在前 6 字节成功后提前返回。
+     */
+    return ahtx0_read_direct(data, 7);
 }
 
-esp_err_t aht20_read(aht20_sample_t *out)
+/* 调用本函数前必须持有总线操作锁。 */
+static esp_err_t aht20_read_locked(aht20_sample_t *out)
 {
-    if (!out)
-        return ESP_ERR_INVALID_ARG;
-    memset(out, 0, sizeof(*out));
-
-    esp_err_t err = aht20_init();
+    esp_err_t err = aht20_init_locked();
     if (err != ESP_OK)
         return err;
 
@@ -250,23 +263,21 @@ esp_err_t aht20_read(aht20_sample_t *out)
     vTaskDelay(pdMS_TO_TICKS(AHTX0_MEASURE_WAIT_MS));
 
     uint8_t data[7] = {0};
-    size_t data_len = 0;
-    err = ahtx0_read_measurement_frame(data, &data_len);
+    err = ahtx0_read_measurement_frame(data);
     if (err != ESP_OK)
         return err;
 
     if (data[0] & AHTX0_STATUS_BUSY)
         return ESP_ERR_TIMEOUT;
 
-    if (data_len == 7) {
-        uint8_t crc = ahtx0_crc8(data, 6);
-        if (crc != data[6]) {
-            ESP_LOGW(TAG,
-                     "crc mismatch: got 0x%02x expected 0x%02x frame=%02x %02x %02x %02x %02x %02x %02x",
-                     data[6], crc, data[0], data[1], data[2], data[3],
-                     data[4], data[5], data[6]);
-            return ESP_ERR_INVALID_CRC;
-        }
+    /* 每次读取都校验 CRC，线路干扰产生的错误数据不会进入显示缓存。 */
+    uint8_t crc = ahtx0_crc8(data, 6);
+    if (crc != data[6]) {
+        ESP_LOGW(TAG,
+                 "crc mismatch: got 0x%02x expected 0x%02x frame=%02x %02x %02x %02x %02x %02x %02x",
+                 data[6], crc, data[0], data[1], data[2], data[3],
+                 data[4], data[5], data[6]);
+        return ESP_ERR_INVALID_CRC;
     }
 
     uint32_t raw_h =
@@ -291,4 +302,23 @@ esp_err_t aht20_read(aht20_sample_t *out)
     if (out->humidity_percent > 100.0f)
         out->humidity_percent = 100.0f;
     return ESP_OK;
+}
+
+esp_err_t aht20_read(aht20_sample_t *out)
+{
+    if (!out)
+        return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+
+    /*
+     * 从触发测量到读取结果全程持有操作锁。中间虽然要等待 100ms，休眠任务
+     * 也必须等本次读取真正结束，不能在等待期间提前隔离 I2C 引脚。
+     */
+    esp_err_t err = i2c_bus_begin_operation();
+    if (err != ESP_OK)
+        return err;
+
+    err = aht20_read_locked(out);
+    i2c_bus_end_operation();
+    return err;
 }
