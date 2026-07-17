@@ -309,6 +309,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <div class="dash-item"><div class="dash-icon">🌤</div><div class="dash-label">天气</div><div class="dash-value" id="d_weather">-</div></div>
     <div class="dash-item"><div class="dash-icon">🏷</div><div class="dash-label">固件</div><div class="dash-value" id="d_fw">-</div></div>
     <div class="dash-item"><div class="dash-icon">🧠</div><div class="dash-label">内存</div><div class="dash-value" id="d_heap">-</div></div>
+    <div class="dash-item"><div class="dash-icon">🌡</div><div class="dash-label">室内</div><div class="dash-value" id="d_sensor">-</div></div>
   </div>
 
   <div class="grid">
@@ -559,6 +560,7 @@ async function refresh(){
       renderPreview();
     }
     updateDashboard(j);
+    refreshSensorDashboard();
     updateNetFromStatus(j);
     log('状态已更新。','ok');
   }catch(e){log('状态获取失败：'+e,'bad');}
@@ -1049,6 +1051,34 @@ function updateDashboard(s){
     var pk=s.psram_free!=null?Math.round(s.psram_free/1024):0;
     document.getElementById('d_heap').textContent=hk+'K';
     document.getElementById('d_heap').title='总空闲 '+hk+'KB · 内部 '+ik+'KB · PSRAM '+pk+'KB';
+  }
+}
+function setSensorDashboard(text,title){
+  const el=document.getElementById('d_sensor');
+  if(!el) return;
+  el.textContent=text||'-';
+  el.title=title||'';
+}
+async function refreshSensorDashboard(){
+  const el=document.getElementById('d_sensor');
+  if(!el) return;
+  try{
+    const r=await fetch('/sensor_status',epdFetchOpts());
+    const j=await r.json();
+    if(!j.enabled){
+      setSensorDashboard('未开启','本地温湿度传感器未启用');
+    }else if(j.valid){
+      const temp=Number(j.temperature_c);
+      const hum=Number(j.humidity_percent);
+      const age=Number(j.age_ms||0);
+      setSensorDashboard(temp.toFixed(1)+'°C / '+hum.toFixed(0)+'%','AHT20 '+(j.i2c_addr||'')+' · 数据年龄 '+Math.round(age/1000)+'s');
+    }else if(j.present){
+      setSensorDashboard('待读数','AHT20 已检测到，等待有效读数');
+    }else{
+      setSensorDashboard('未检测','AHT20 未检测到 · '+(j.last_error||'-'));
+    }
+  }catch(e){
+    setSensorDashboard('离线','温湿度状态获取失败');
   }
 }
 (function(){
