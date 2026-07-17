@@ -305,7 +305,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <div class="dash-item"><div class="dash-icon">🕐</div><div class="dash-label">设备时间</div><div class="dash-value" id="d_time">-</div></div>
     <div class="dash-item"><div class="dash-icon">📺</div><div class="dash-label">屏幕</div><div class="dash-value" id="d_panel">-</div></div>
     <div class="dash-item"><div class="dash-icon">💾</div><div class="dash-label">存储</div><div class="dash-value" id="d_storage">-</div></div>
-    <div class="dash-item"><div class="dash-icon">💽</div><div class="dash-label">TF卡</div><div class="dash-value" id="d_sdcard">-</div></div>
+    <div class="dash-item"><div class="dash-icon">💽</div><div class="dash-label">SD卡</div><div class="dash-value" id="d_sdcard">-</div></div>
     <div class="dash-item"><div class="dash-icon">🔋</div><div class="dash-label">电量</div><div class="dash-value" id="d_power">-</div></div>
     <div class="dash-item"><div class="dash-icon">🌤</div><div class="dash-label">天气</div><div class="dash-value" id="d_weather">-</div></div>
     <div class="dash-item"><div class="dash-icon">🏷</div><div class="dash-label">固件</div><div class="dash-value" id="d_fw">-</div></div>
@@ -1043,14 +1043,14 @@ function updateDashboard(s){
     if(s.sd_mounted){
       const total=Number(s.sd_total)||0;
       const free=Number(s.sd_free)||0;
-      sdEl.textContent=total>0?'剩余 '+fmtStorage(free):'已挂载';
-      sdEl.title=(s.sd_name||'SD')+' · '+(s.sd_dirs_ready?'目录就绪':'目录未就绪')+' · 总 '+(total>0?fmtStorage(total):(s.sd_capacity_mb?String(s.sd_capacity_mb)+'MB':'未知'))+sdErr;
+      sdEl.textContent='SD卡已挂载';
+      sdEl.title='卡名：'+(s.sd_name||'未知')+' · '+(s.sd_dirs_ready?'目录就绪':'目录未就绪')+' · 剩余 '+(free>0?fmtStorage(free):'未知')+' · 总 '+(total>0?fmtStorage(total):(s.sd_capacity_mb?String(s.sd_capacity_mb)+'MB':'未知'))+sdErr;
     }else if(s.sd_powered){
       sdEl.textContent='检测中';
-      sdEl.title='TF 卡已上电，尚未挂载'+sdErr;
+      sdEl.title='SD卡已上电，尚未挂载'+sdErr;
     }else{
       sdEl.textContent='断电';
-      sdEl.title='低功耗待机；到配置页可手动检测 TF 卡'+sdErr;
+      sdEl.title='低功耗待机；到配置页可手动检测SD卡'+sdErr;
     }
   }
   document.getElementById('d_mode').textContent=s.current_mode_label||s.current_mode_name||'-';

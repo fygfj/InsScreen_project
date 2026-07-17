@@ -1744,15 +1744,15 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
               <div class="k">AP 地址</div><div class="v">192.168.4.1</div>
               <div class="k">电池</div><div class="v" id="st_battery">-</div>
               <div class="k">用户文件区</div><div class="v" id="st_spiffs">-</div>
-              <div class="k">TF 卡</div><div class="v" id="st_sdcard">-</div>
+              <div class="k">SD卡</div><div class="v" id="st_sdcard">-</div>
             </div>
             <div class="actions">
               <button class="btn ghost sm" onclick="loadStatus()">刷新状态</button>
               <button class="btn danger sm" onclick="forgetWifi()">清空已保存 WiFi</button>
               <button class="btn ghost sm" onclick="retrySpiffs()">重试文件区</button>
               <button class="btn danger sm" id="spiffsFormatBtn" onclick="formatSpiffs()">格式化文件区</button>
-              <button class="btn ghost sm" onclick="mountSdCard()">检测 TF 卡</button>
-              <button class="btn ghost sm" onclick="unmountSdCard()">卸载 TF 卡</button>
+              <button class="btn ghost sm" onclick="mountSdCard()">检测SD卡</button>
+              <button class="btn ghost sm" onclick="unmountSdCard()">卸载SD卡</button>
             </div>
           </div>
         </article>
@@ -2264,9 +2264,8 @@ async function loadStatus(silent){
       if(st.sd_mounted){
         const total=Number(st.sd_total)||0;
         const free=Number(st.sd_free)||0;
-        const name=st.sd_name||'SD';
         const dirOk=st.sd_dirs_ready?'，目录就绪':'，目录未就绪'+(st.sd_dir_err&&st.sd_dir_err!=='ESP_OK'?'：'+st.sd_dir_err:'');
-        sd.textContent=name+' 已挂载'+dirOk+'，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(st.sd_capacity_mb?st.sd_capacity_mb+' MB':'未知'));
+        sd.textContent='SD卡已挂载'+dirOk+'，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(st.sd_capacity_mb?st.sd_capacity_mb+' MB':'未知'));
         sd.className=st.sd_dirs_ready?'v ok':'v warn';
       }else if(st.sd_powered){
         sd.textContent='已上电，未挂载'+(err?'：'+err:'');
@@ -2275,7 +2274,7 @@ async function loadStatus(silent){
         sd.textContent='已断电'+(err?'，上次结果：'+err:'');
         sd.className=err?'v warn':'v';
       }
-      sd.title='默认断电以降低休眠功耗，点击“检测 TF 卡”才会上电挂载';
+      sd.title=(st.sd_mounted?'卡名：'+(st.sd_name||'未知')+'；':'')+'默认断电以降低休眠功耗，点击“检测SD卡”才会上电挂载';
     }
     // ── live overview meters + extra live rows (bound to real /status data) ──
     setMeter('ovm_conn', j.sta_connected?100:32);
@@ -2315,27 +2314,27 @@ async function retrySpiffs(){
 
 async function mountSdCard(){
   try{
-    log('正在给 TF 卡上电并尝试挂载…','warn');
+    log('正在给SD卡上电并尝试挂载…','warn');
     const r=await fetch('/sd_mount',epdFetchOpts({method:'POST'}));
     const j=await r.json();
     if(j.ok&&j.mounted){
       const total=Number(j.total_bytes)||0;
       const free=Number(j.free_bytes)||0;
-      log('TF 卡已挂载：'+(j.name||'SD')+'，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(j.capacity_mb?j.capacity_mb+' MB':'未知')),'ok');
+      log('SD卡已挂载，卡名：'+(j.name||'未知')+'，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(j.capacity_mb?j.capacity_mb+' MB':'未知')),'ok');
     }else{
-      log('TF 卡挂载失败：'+(j.last_error||r.status),'bad');
+      log('SD卡挂载失败：'+(j.last_error||r.status),'bad');
     }
     await loadStatus();
-  }catch(e){log('TF 卡检测失败: '+e,'bad');}
+  }catch(e){log('SD卡检测失败: '+e,'bad');}
 }
 
 async function unmountSdCard(){
   try{
     const r=await fetch('/sd_unmount',epdFetchOpts({method:'POST'}));
     const j=await r.json();
-    log(j.ok?'TF 卡已卸载并断电。':'TF 卡卸载失败：'+(j.last_error||r.status),j.ok?'ok':'bad');
+    log(j.ok?'SD卡已卸载并断电。':'SD卡卸载失败：'+(j.last_error||r.status),j.ok?'ok':'bad');
     await loadStatus();
-  }catch(e){log('TF 卡卸载失败: '+e,'bad');}
+  }catch(e){log('SD卡卸载失败: '+e,'bad');}
 }
 
 async function formatSpiffs(){
