@@ -1198,8 +1198,6 @@ static void draw_metric_deck(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x + 8, y + 7,
                           "\xe6\xb0\x94\xe8\xb1\xa1\xe6\x8c\x87\xe6\xa0\x87",
                           COLOR_BLACK, 1);
-    (void)weather_draw_local_sensor(fb, x + 118, y + 7,
-                                    w - 130, COLOR_BLACK, 16);
 
     char feels_value[24];
     char humidity_value[24];
@@ -1237,6 +1235,8 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x + 8, y + 7,
                           "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
                           COLOR_BLACK, 1);
+    (void)weather_draw_local_sensor(fb, x + 118, y + 7,
+                                    w - 130, COLOR_BLACK, 16);
 
     int n = wd->daily_count;
     if (n > 3) n = 3;
@@ -1722,8 +1722,6 @@ static void draw_weather_583_metrics(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x + 10, y + 8,
                           "\xe6\xb0\x94\xe8\xb1\xa1\xe6\x8c\x87\xe6\xa0\x87",
                           COLOR_BLACK, 1);
-    (void)weather_draw_local_sensor(fb, x + 118, y + 8,
-                                    w - 130, COLOR_BLACK, 16);
 
     char feels_value[20];
     char humidity_value[20];
@@ -1792,6 +1790,8 @@ static void draw_weather_583_forecast(fb_t *fb, int x, int y, int w, int h,
     ui_draw_section_label(fb, x, y,
                           "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
                           COLOR_BLACK, 1);
+    (void)weather_draw_local_sensor(fb, x + 112, y,
+                                    w - 112, COLOR_BLACK, 16);
 
     int n = wd->daily_count;
     if (n > 3)
@@ -1890,9 +1890,6 @@ static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
              wd->now.text, today_high, today_low);
     ui_draw_fixed_text_maxw(fb, temp_x, top_y + 67, summary,
                             COLOR_RED, 1, metric_x - temp_x - 8);
-    (void)weather_draw_local_sensor(fb, temp_x, top_y + 84,
-                                    metric_x - temp_x - 8,
-                                    COLOR_BLACK, 16);
 
     ui_draw_dotted_vline(fb, metric_x - 10, top_y + 16,
                          top_h - 30, COLOR_BLACK, 6);
@@ -1925,6 +1922,8 @@ static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
     ui_draw_section_label(fb, content_x, forecast_y,
                           "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
                           COLOR_BLACK, 1);
+    (void)weather_draw_local_sensor(fb, content_x + 108, forecast_y,
+                                    content_w - 108, COLOR_BLACK, 16);
 
     int card_y = forecast_y + 21;
     int card_bottom = H - footer_guard;

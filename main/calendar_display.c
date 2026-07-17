@@ -373,8 +373,7 @@ static int cal_draw_compact_date(fb_t *fb, int x, int y,
 /* 绘制：标题 / 星期 / 网格线 / 日格                                          */
 /* -------------------------------------------------------------------------- */
 
-static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month,
-                           const char *right_note)
+static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
 {
     int W = L->fb_w;
     int s = L->sc;
@@ -397,16 +396,15 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month,
     else
         ui_draw_fixed_text(fb, L->grid_x + 8 * s, 5 * s, title,
                            COLOR_BLACK, s);
-    const char *right = (right_note && right_note[0]) ? right_note : meta;
-    if (right && right[0]) {
+    if (meta[0]) {
         int right_max = W - (L->grid_x + 8 * s) - (is_583 ? 210 : 120);
         if (right_max < 40)
             right_max = W / 3;
-        int tw = ui_fixed_text_width(fb, right, 1);
+        int tw = ui_fixed_text_width(fb, meta, 1);
         int rx = W - L->grid_x - tw;
         if (tw > right_max)
             rx = W - L->grid_x - right_max;
-        ui_draw_fixed_text_maxw(fb, rx, is_583 ? 24 : 5 * s, right,
+        ui_draw_fixed_text_maxw(fb, rx, is_583 ? 24 : 5 * s, meta,
                                 COLOR_BLACK, 1, right_max);
     }
     ui_draw_dotted_hline(fb, L->grid_x,
@@ -571,15 +569,28 @@ static bool cal_local_sensor_line(char *out, size_t out_sz)
     return true;
 }
 
+static bool cal_make_footer_left(char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return false;
+
+    char sensor_line[48];
+    if (cal_local_sensor_line(sensor_line, sizeof(sensor_line))) {
+        snprintf(out, out_sz, "%s  %s",
+                 "\xe6\x97\xa5\xe5\x8e\x86", sensor_line);
+        return true;
+    }
+
+    snprintf(out, out_sz, "%s", "\xe6\x97\xa5\xe5\x8e\x86");
+    return false;
+}
+
 static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w,
                                       bool big, bool crisp)
 {
     weather_summary_t wd;
     memset(&wd, 0, sizeof(wd));
     weather_get_summary_copy(&wd);
-    char local_sensor[48];
-    bool has_local_sensor = cal_local_sensor_line(local_sensor,
-                                                  sizeof(local_sensor));
 
     const int box_h = big ? 42 : 48;
     if (max_w < WEATHER_ICON_W + 36)
@@ -609,13 +620,9 @@ static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w,
             snprintf(l2, sizeof(l2), "%dC | %d%%",
                      wd.now.temp, wd.now.humidity);
         }
-        if (has_local_sensor) {
-            snprintf(l3, sizeof(l3), "%s", local_sensor);
-        } else {
-            snprintf(l3, sizeof(l3), "%s %d级",
-                     wd.now.wind_dir[0] ? wd.now.wind_dir : "风",
-                     wd.now.wind_scale);
-        }
+        snprintf(l3, sizeof(l3), "%s %d级",
+                 wd.now.wind_dir[0] ? wd.now.wind_dir : "风",
+                 wd.now.wind_scale);
 
         int tx = icon_x + WEATHER_ICON_W + (big ? 5 : 3);
         int tw = max_w - (tx - x) - (big ? 4 : 3);
@@ -635,8 +642,7 @@ static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w,
         }
         if (big) {
             ui_draw_fixed_text_maxw(fb, tx, y + 4, l1, COLOR_BLACK, 1, tw);
-            ui_draw_fixed_text_maxw(fb, tx, y + 22,
-                                    has_local_sensor ? local_sensor : l2,
+            ui_draw_fixed_text_maxw(fb, tx, y + 22, l2,
                                     COLOR_BLACK, 1, tw);
         } else if (crisp) {
             ui_draw_fixed_text_maxw(fb, tx, y, l1, COLOR_BLACK, 1, tw);
@@ -662,10 +668,7 @@ static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w,
             ui_draw_fixed_text_maxw(fb, tx, y + 32, l3, COLOR_BLACK, 1, tw);
         }
     } else {
-        if (has_local_sensor) {
-            ui_draw_fixed_text_maxw(fb, x + 8, y + (big ? 13 : 9),
-                                    local_sensor, COLOR_BLACK, 1, max_w - 16);
-        } else if (!big && crisp) {
+        if (!big && crisp) {
             ui_draw_fixed_text_maxw(fb, x + 8, y + 9, "无天气",
                                COLOR_BLACK, 1, max_w - 16);
         } else {
@@ -757,13 +760,13 @@ static void cal_render_overview(fb_t *fb, int year, int month,
     const int top = big ? 16 : (is_583 ? 18 : 10);
     const int header_h = big ? 84 : (is_583 ? 96 : 56);
     const int week_h = big ? 28 : (is_583 ? 34 : 18);
-    const int bottom_gap = is_583 ? 16 : 10;
+    const int footer_gap = (big || is_583) ? 58 : 42;
     const int grid_x = mx;
     const int grid_w = W - 2 * mx;
     const int col_w = grid_w / CAL_GRID_COLS;
     const int week_y = top + header_h;
     const int grid_top = week_y + week_h;
-    const int grid_h = H - grid_top - bottom_gap;
+    const int grid_h = H - grid_top - footer_gap;
     const int row_h = grid_h / CAL_GRID_ROWS;
     const int grid_actual_w = col_w * CAL_GRID_COLS;
     const int grid_actual_h = row_h * CAL_GRID_ROWS;
@@ -914,6 +917,12 @@ static void cal_render_overview(fb_t *fb, int year, int month,
                                col_w, row_h, year, month, d, col,
                                today_y, today_m, today_d);
     }
+
+    char today[40];
+    snprintf(today, sizeof(today), "%04d-%02d-%02d", today_y, today_m, today_d);
+    char footer_left[80];
+    (void)cal_make_footer_left(footer_left, sizeof(footer_left));
+    ui_draw_footer(fb, footer_left, today);
 }
 
 static void cal_render_month(fb_t *fb, int year, int month,
@@ -925,11 +934,7 @@ static void cal_render_month(fb_t *fb, int year, int month,
     fb_clear(fb);
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
 
-    char local_sensor[48];
-    bool has_local_sensor = cal_local_sensor_line(local_sensor,
-                                                  sizeof(local_sensor));
-    cal_draw_title(fb, &L, year, month,
-                   has_local_sensor ? local_sensor : NULL);
+    cal_draw_title(fb, &L, year, month);
     cal_draw_weekday_row(fb, &L);
     cal_draw_grid_lines(fb, &L);
 
@@ -953,8 +958,7 @@ static void cal_render_month(fb_t *fb, int year, int month,
     char today[40];
     snprintf(today, sizeof(today), "%04d-%02d-%02d", today_y, today_m, today_d);
     char footer_left[80];
-    snprintf(footer_left, sizeof(footer_left), "%s",
-             "\xe6\x97\xa5\xe5\x8e\x86");
+    (void)cal_make_footer_left(footer_left, sizeof(footer_left));
     ui_draw_footer(fb, footer_left, today);
 }
 

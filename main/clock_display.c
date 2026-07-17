@@ -264,28 +264,20 @@ static bool clock_local_sensor_line(char *out, size_t out_sz)
     return true;
 }
 
-static void clock_draw_sensor_text(fb_t *fb, int x, int y,
-                                   const char *line, int max_w,
-                                   fb_color_t color)
+static bool clock_make_footer_left(char *out, size_t out_sz)
 {
-    if (!fb || !line || !line[0] || max_w <= 0)
-        return;
-
-    clock_draw_text_maxw(fb, x, y, line, color, 1, max_w);
-}
-
-static bool clock_draw_local_sensor_at(fb_t *fb, int x, int y,
-                                       int max_w, fb_color_t color)
-{
-    if (!fb || max_w <= 0)
+    if (!out || out_sz == 0)
         return false;
 
-    char line[64];
-    if (!clock_local_sensor_line(line, sizeof(line)))
-        return false;
+    char sensor_line[64];
+    if (clock_local_sensor_line(sensor_line, sizeof(sensor_line))) {
+        snprintf(out, out_sz, "%s  %s",
+                 "\xe6\x97\xb6\xe9\x92\x9f", sensor_line);
+        return true;
+    }
 
-    clock_draw_sensor_text(fb, x, y, line, max_w, color);
-    return true;
+    snprintf(out, out_sz, "%s", "\xe6\x97\xb6\xe9\x92\x9f");
+    return false;
 }
 
 static void clock_draw_footer(fb_t *fb, const char *left, const char *right)
@@ -441,9 +433,9 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     fb_fill_rect(fb, 20, line_y, W - 40, 2, COLOR_RED);
 
     const int card_x = 22;
-    const int card_y = line_y + 15;
+    const int card_y = line_y + 10;
     const int card_w = W - 2 * card_x;
-    const int card_h = 78;
+    const int card_h = 58;
     clock_draw_ref_card(fb, card_x, card_y, card_w, card_h);
 
     int red_x = card_x + card_w - 8;
@@ -473,15 +465,15 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
                           : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
     int info_x = split_x + 20;
     int info_w = card_x + card_w - 20 - info_x;
-    ui_draw_text_px_maxw(fb, info_x, card_y + 10, ampm, COLOR_BLACK,
-                         30, info_w);
-    clock_draw_text_maxw(fb, info_x, card_y + 50, tag,
+    ui_draw_text_px_maxw(fb, info_x, card_y + 7, ampm, COLOR_BLACK,
+                         28, info_w);
+    clock_draw_text_maxw(fb, info_x, card_y + 38, tag,
                          time_sync_is_synced() ? COLOR_BLACK : COLOR_RED,
                          1, info_w);
-    int sensor_y = card_y + card_h + 7;
-    if (sensor_y < fb->height - 26)
-        (void)clock_draw_local_sensor_at(fb, card_x, sensor_y, card_w,
-                                         COLOR_BLACK);
+
+    char footer_left[96];
+    (void)clock_make_footer_left(footer_left, sizeof(footer_left));
+    clock_draw_footer(fb, footer_left, "\xe6\x97\xb6\xe9\x97\xb4");
 }
 
 static void nvs_load(void)
@@ -692,10 +684,6 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                                   COLOR_BLACK, 1, W - right_x - MX);
             clock_draw_text_maxw(fb, right_x, current_y + 40, wind,
                                   COLOR_BLACK, 1, W - right_x - MX);
-            (void)clock_draw_local_sensor_at(fb, left_x, current_y + 49,
-                                             split_x - left_x - 10,
-                                             COLOR_BLACK);
-
             int dot_y = current_y + 66;
             ui_draw_dotted_hline(fb, MX + 10, dot_y, W - 2 * MX - 20,
                                  COLOR_BLACK, 6);
@@ -777,16 +765,8 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             int lx2 = W * 80 / 648;
             int lw2 = W - lx2 - MX - 8;
             if (lw2 < 24) lw2 = 24;
-            char sensor_line[64];
-            if (clock_local_sensor_line(sensor_line, sizeof(sensor_line))) {
-                clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap,
-                                     line2, COLOR_BLACK, 1, lw2);
-                clock_draw_sensor_text(fb, lx2, bot_y + wx_head_gap + 20,
-                                       sensor_line, lw2, COLOR_BLACK);
-            } else {
-                clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap,
-                                     line2, COLOR_BLACK, wx_head_sc, lw2);
-            }
+            clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap,
+                                 line2, COLOR_BLACK, wx_head_sc, lw2);
         }
 
         int dot_y = bot_y + 2 * wx_head_gap + 2;
@@ -880,22 +860,18 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                             ampm, COLOR_BLACK, ampm_sc);
             clock_draw_text(fb, (W - tw) / 2, card_y + (is_583 ? 72 : 48), tag,
                             time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
-            int sensor_y = card_y + card_h + (is_583 ? 8 : 7);
-            if (sensor_y < H - 22)
-                (void)clock_draw_local_sensor_at(fb, card_x + 12, sensor_y,
-                                                 card_w - 24, COLOR_BLACK);
         } else {
             ui_draw_dotted_hline(fb, W / 2 - 70, bot_y + 30, 140, COLOR_BLACK, 6);
             int aw = clock_text_px(ampm, sc);
             clock_draw_text(fb, (W - aw) / 2, bot_y + 50, ampm, COLOR_BLACK, sc);
-            (void)clock_draw_local_sensor_at(fb, W / 2 - 120,
-                                             bot_y + 50 + 20 * sc,
-                                             240, COLOR_BLACK);
         }
     }
 
-    if (big || has_weather || cfg_local.show_weather)
-        clock_draw_footer(fb, "\xe6\x97\xb6\xe9\x92\x9f",
+    char footer_left[96];
+    bool footer_has_sensor =
+        clock_make_footer_left(footer_left, sizeof(footer_left));
+    if (big || has_weather || cfg_local.show_weather || footer_has_sensor)
+        clock_draw_footer(fb, footer_left,
                           cfg_local.show_weather ? "\xe5\xa4\xa9\xe6\xb0\x94" : "\xe6\x97\xb6\xe9\x97\xb4");
 
 clock_render_done:
