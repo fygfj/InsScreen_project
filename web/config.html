@@ -2265,8 +2265,9 @@ async function loadStatus(silent){
         const total=Number(st.sd_total)||0;
         const free=Number(st.sd_free)||0;
         const name=st.sd_name||'SD';
-        sd.textContent=name+' 已挂载，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(st.sd_capacity_mb?st.sd_capacity_mb+' MB':'未知'));
-        sd.className='v ok';
+        const dirOk=st.sd_dirs_ready?'，目录就绪':'，目录未就绪'+(st.sd_dir_err&&st.sd_dir_err!=='ESP_OK'?'：'+st.sd_dir_err:'');
+        sd.textContent=name+' 已挂载'+dirOk+'，剩余 '+(total>0?fmtBytes(free):'未知')+' / 总 '+(total>0?fmtBytes(total):(st.sd_capacity_mb?st.sd_capacity_mb+' MB':'未知'));
+        sd.className=st.sd_dirs_ready?'v ok':'v warn';
       }else if(st.sd_powered){
         sd.textContent='已上电，未挂载'+(err?'：'+err:'');
         sd.className='v warn';

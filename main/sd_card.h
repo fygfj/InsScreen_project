@@ -11,6 +11,10 @@ extern "C" {
 #endif
 
 #define SD_CARD_MOUNT_POINT "/sdcard"
+#define SD_CARD_APP_DIR     SD_CARD_MOUNT_POINT "/epd"
+#define SD_CARD_IMAGES_DIR  SD_CARD_APP_DIR "/images"
+#define SD_CARD_BACKUP_DIR  SD_CARD_APP_DIR "/backup"
+#define SD_CARD_LOGS_DIR    SD_CARD_APP_DIR "/logs"
 
 #define SD_CARD_PWR_EN_GPIO GPIO_NUM_21
 #define SD_CARD_CLK_GPIO    GPIO_NUM_48
@@ -22,12 +26,14 @@ typedef struct {
     bool powered;
     bool mounted;
     bool card_present;
+    bool dirs_ready;
     uint64_t total_bytes;
     uint64_t free_bytes;
     uint32_t sector_size;
     uint32_t capacity_mb;
     char card_name[16];
     esp_err_t last_error;
+    esp_err_t last_dir_error;
 } sd_card_status_t;
 
 esp_err_t sd_card_init(void);

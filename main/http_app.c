@@ -371,6 +371,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     char esc_wx_update[32];
     char esc_sd_name[24];
     char esc_sd_err[32];
+    char esc_sd_dir_err[32];
 
     json_escape(esc_version, sizeof(esc_version), desc ? desc->version : "");
     json_escape(esc_idf, sizeof(esc_idf), desc ? desc->idf_ver : "");
@@ -384,9 +385,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
     json_escape(esc_sd_name, sizeof(esc_sd_name), sd.card_name);
     json_escape(esc_sd_err, sizeof(esc_sd_err), esp_err_to_name(sd.last_error));
+    json_escape(esc_sd_dir_err, sizeof(esc_sd_dir_err), esp_err_to_name(sd.last_dir_error));
 
     bool wx_configured = wx_cfg.api_key[0] && wx_cfg.api_host[0] && wx_cfg.location[0];
-    char json[3072];
+    char json[3328];
     snprintf(json, sizeof(json),
              "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
              "\"running\":\"%s\","
@@ -406,6 +408,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"sd_initialized\":%s,\"sd_powered\":%s,\"sd_mounted\":%s,"
              "\"sd_present\":%s,\"sd_total\":%llu,\"sd_free\":%llu,"
              "\"sd_capacity_mb\":%u,\"sd_name\":\"%s\",\"sd_err\":\"%s\","
+             "\"sd_dirs_ready\":%s,\"sd_dir_err\":\"%s\","
              "\"weather_enabled\":%s,\"weather_configured\":%s,"
              "\"weather_city\":\"%s\",\"weather_refresh_min\":%lu,"
              "\"weather_valid\":%s,\"weather_temp\":%d,"
@@ -440,6 +443,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              (unsigned)sd.capacity_mb,
              esc_sd_name,
              esc_sd_err,
+             sd.dirs_ready ? "true" : "false",
+             esc_sd_dir_err,
              wx_cfg.enabled ? "true" : "false",
              wx_configured ? "true" : "false",
              esc_city,
@@ -1686,7 +1691,12 @@ static cJSON *sd_card_status_json(esp_err_t op_err)
     cJSON_AddBoolToObject(root, "powered", st.powered);
     cJSON_AddBoolToObject(root, "mounted", st.mounted);
     cJSON_AddBoolToObject(root, "present", st.card_present);
+    cJSON_AddBoolToObject(root, "dirs_ready", st.dirs_ready);
     cJSON_AddStringToObject(root, "mount_point", sd_card_mount_point());
+    cJSON_AddStringToObject(root, "app_dir", SD_CARD_APP_DIR);
+    cJSON_AddStringToObject(root, "images_dir", SD_CARD_IMAGES_DIR);
+    cJSON_AddStringToObject(root, "backup_dir", SD_CARD_BACKUP_DIR);
+    cJSON_AddStringToObject(root, "logs_dir", SD_CARD_LOGS_DIR);
     cJSON_AddStringToObject(root, "name", st.card_name);
     cJSON_AddNumberToObject(root, "capacity_mb", st.capacity_mb);
     cJSON_AddNumberToObject(root, "sector_size", st.sector_size);
@@ -1694,6 +1704,8 @@ static cJSON *sd_card_status_json(esp_err_t op_err)
     cJSON_AddNumberToObject(root, "free_bytes", (double)st.free_bytes);
     cJSON_AddStringToObject(root, "last_error",
                             esp_err_to_name(op_err != ESP_OK ? op_err : st.last_error));
+    cJSON_AddStringToObject(root, "dir_error",
+                            esp_err_to_name(st.last_dir_error));
     return root;
 }
 

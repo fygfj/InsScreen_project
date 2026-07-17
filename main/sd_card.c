@@ -1,8 +1,10 @@
 #include "sd_card.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 
 #include "driver/gpio.h"
@@ -24,11 +26,13 @@ static bool s_initialized;
 static bool s_vfs_registered;
 static bool s_powered;
 static bool s_mounted;
+static bool s_dirs_ready;
 static bool s_host_slot_inited;
 static sdmmc_card_t *s_card;
 static FATFS *s_fs;
 static BYTE s_pdrv = 0xff;
 static esp_err_t s_last_error = ESP_OK;
+static esp_err_t s_last_dir_error = ESP_OK;
 
 static SemaphoreHandle_t sd_card_lock(void)
 {
@@ -131,6 +135,46 @@ static void sd_card_release_mount_locked(void)
     free(s_card);
     s_card = NULL;
     s_mounted = false;
+    s_dirs_ready = false;
+}
+
+static esp_err_t sd_card_ensure_dir(const char *path)
+{
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        return S_ISDIR(st.st_mode) ? ESP_OK : ESP_ERR_INVALID_STATE;
+    }
+
+    if (mkdir(path, 0775) == 0)
+        return ESP_OK;
+
+    return errno == EEXIST ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t sd_card_ensure_dirs_locked(void)
+{
+    const char *dirs[] = {
+        SD_CARD_APP_DIR,
+        SD_CARD_IMAGES_DIR,
+        SD_CARD_BACKUP_DIR,
+        SD_CARD_LOGS_DIR,
+    };
+
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        esp_err_t err = sd_card_ensure_dir(dirs[i]);
+        if (err != ESP_OK) {
+            s_dirs_ready = false;
+            s_last_dir_error = err;
+            ESP_LOGW(TAG, "directory not ready: %s (%s)",
+                     dirs[i], esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    s_dirs_ready = true;
+    s_last_dir_error = ESP_OK;
+    ESP_LOGI(TAG, "directories ready under %s", SD_CARD_APP_DIR);
+    return ESP_OK;
 }
 
 static void sd_card_update_fs_info_locked(sd_card_status_t *st)
@@ -243,6 +287,7 @@ esp_err_t sd_card_mount(void)
     if (err == ESP_OK) {
         s_mounted = true;
         s_last_error = ESP_OK;
+        (void)sd_card_ensure_dirs_locked();
         ESP_LOGI(TAG, "mounted: %s, capacity=%lluMB",
                  s_card && s_card->cid.name[0] ? s_card->cid.name : "SD",
                  s_card ? (unsigned long long)(s_card->csd.capacity *
@@ -312,7 +357,9 @@ void sd_card_get_status(sd_card_status_t *out)
     out->powered = s_powered;
     out->mounted = s_mounted;
     out->card_present = s_mounted;
+    out->dirs_ready = s_mounted && s_dirs_ready;
     out->last_error = s_last_error;
+    out->last_dir_error = s_last_dir_error;
 
     if (s_card) {
         snprintf(out->card_name, sizeof(out->card_name), "%s",
