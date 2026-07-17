@@ -44,6 +44,7 @@ idf_component_register(
         "i2c_bus.c"
         "aht20.c"
         "sensor_local.c"
+        "sd_card.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
@@ -75,6 +76,9 @@ idf_component_register(
         esp_adc
         esp_driver_ledc
         esp_driver_i2c
+        esp_driver_sdmmc
+        fatfs
+        sdmmc
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

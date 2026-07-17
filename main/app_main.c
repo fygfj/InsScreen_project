@@ -30,6 +30,7 @@
 #include "battery_mon.h"
 #include "buzzer.h"
 #include "sensor_local.h"
+#include "sd_card.h"
 #include "button.h"
 #include "fb_render.h"
 #include "font_ext.h"
@@ -841,6 +842,7 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_utils_init());
 
     ESP_ERROR_CHECK(power_mgr_init());
+    ESP_ERROR_CHECK(sd_card_init());
 
     if (battery_mon_init() != ESP_OK)
         ESP_LOGW(TAG, "Battery monitor unavailable (check BAT_DET / ADC pin)");

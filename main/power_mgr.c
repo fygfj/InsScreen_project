@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "i2c_bus.h"
+#include "sd_card.h"
 #include "hal/usb_serial_jtag_ll.h"
 #include "esp_timer.h"
 #include "nvs.h"
@@ -343,6 +344,13 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
             vTaskDelay(pdMS_TO_TICKS(90));
     }
     nvs_flush_all();
+    esp_err_t sd_err = sd_card_prepare_sleep();
+    if (sd_err != ESP_OK) {
+        ESP_LOGE(TAG, "Sleep cancelled: SD card is not ready: %s",
+                 esp_err_to_name(sd_err));
+        power_mgr_reset_activity();
+        return;
+    }
     esp_err_t i2c_err = i2c_bus_prepare_sleep();
     if (i2c_err != ESP_OK) {
         /*

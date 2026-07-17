@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -46,6 +47,7 @@
 #include "ui_theme.h"
 #include "buzzer.h"
 #include "sensor_local.h"
+#include "sd_card.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -345,6 +347,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     battery_status_t bat;
     battery_mon_get_status(&bat);
+    sd_card_status_t sd = {0};
+    sd_card_get_status(&sd);
 
     weather_config_t wx_cfg = {0};
     weather_summary_t wx_sum = {0};
@@ -365,6 +369,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     char esc_city[48];
     char esc_wx_text[32];
     char esc_wx_update[32];
+    char esc_sd_name[24];
+    char esc_sd_err[32];
 
     json_escape(esc_version, sizeof(esc_version), desc ? desc->version : "");
     json_escape(esc_idf, sizeof(esc_idf), desc ? desc->idf_ver : "");
@@ -376,9 +382,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
                 wx_cfg.city_name[0] ? wx_cfg.city_name : wx_cfg.location);
     json_escape(esc_wx_text, sizeof(esc_wx_text), wx_sum.valid ? wx_sum.now.text : "");
     json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
+    json_escape(esc_sd_name, sizeof(esc_sd_name), sd.card_name);
+    json_escape(esc_sd_err, sizeof(esc_sd_err), esp_err_to_name(sd.last_error));
 
     bool wx_configured = wx_cfg.api_key[0] && wx_cfg.api_host[0] && wx_cfg.location[0];
-    char json[2048];
+    char json[3072];
     snprintf(json, sizeof(json),
              "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
              "\"running\":\"%s\","
@@ -395,6 +403,9 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"internal_free\":%u,\"psram_free\":%u,"
              "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,"
              "\"battery_adc\":%d,\"battery_mv\":%d,"
+             "\"sd_initialized\":%s,\"sd_powered\":%s,\"sd_mounted\":%s,"
+             "\"sd_present\":%s,\"sd_total\":%llu,\"sd_free\":%llu,"
+             "\"sd_capacity_mb\":%u,\"sd_name\":\"%s\",\"sd_err\":\"%s\","
              "\"weather_enabled\":%s,\"weather_configured\":%s,"
              "\"weather_city\":\"%s\",\"weather_refresh_min\":%lu,"
              "\"weather_valid\":%s,\"weather_temp\":%d,"
@@ -420,6 +431,15 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              bat.charging ? "true" : "false",
              bat.adc_raw,
              bat.voltage_mv,
+             sd.initialized ? "true" : "false",
+             sd.powered ? "true" : "false",
+             sd.mounted ? "true" : "false",
+             sd.card_present ? "true" : "false",
+             (unsigned long long)sd.total_bytes,
+             (unsigned long long)sd.free_bytes,
+             (unsigned)sd.capacity_mb,
+             esc_sd_name,
+             esc_sd_err,
              wx_cfg.enabled ? "true" : "false",
              wx_configured ? "true" : "false",
              esc_city,
@@ -1652,6 +1672,72 @@ static esp_err_t buzzer_test_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static cJSON *sd_card_status_json(esp_err_t op_err)
+{
+    sd_card_status_t st = {0};
+    sd_card_get_status(&st);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+        return NULL;
+
+    cJSON_AddBoolToObject(root, "ok", op_err == ESP_OK);
+    cJSON_AddBoolToObject(root, "initialized", st.initialized);
+    cJSON_AddBoolToObject(root, "powered", st.powered);
+    cJSON_AddBoolToObject(root, "mounted", st.mounted);
+    cJSON_AddBoolToObject(root, "present", st.card_present);
+    cJSON_AddStringToObject(root, "mount_point", sd_card_mount_point());
+    cJSON_AddStringToObject(root, "name", st.card_name);
+    cJSON_AddNumberToObject(root, "capacity_mb", st.capacity_mb);
+    cJSON_AddNumberToObject(root, "sector_size", st.sector_size);
+    cJSON_AddNumberToObject(root, "total_bytes", (double)st.total_bytes);
+    cJSON_AddNumberToObject(root, "free_bytes", (double)st.free_bytes);
+    cJSON_AddStringToObject(root, "last_error",
+                            esp_err_to_name(op_err != ESP_OK ? op_err : st.last_error));
+    return root;
+}
+
+static esp_err_t sd_card_send_json(httpd_req_t *req, esp_err_t op_err)
+{
+    cJSON *root = sd_card_status_json(op_err);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_OK;
+    }
+
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, str);
+    free(str);
+    return ESP_OK;
+}
+
+static esp_err_t sd_status_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    return sd_card_send_json(req, ESP_OK);
+}
+
+static esp_err_t sd_mount_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    esp_err_t err = sd_card_mount();
+    return sd_card_send_json(req, err);
+}
+
+static esp_err_t sd_unmount_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    esp_err_t err = sd_card_unmount();
+    return sd_card_send_json(req, err);
+}
+
 static cJSON *sensor_status_json(void)
 {
     sensor_local_data_t data = {0};
@@ -2132,6 +2218,9 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/epd_repair",    HTTP_POST, epd_repair_post_handler,    NULL },
         { "/spiffs_remount", HTTP_POST, spiffs_remount_post_handler, NULL },
         { "/spiffs_format", HTTP_POST, spiffs_format_post_handler, NULL },
+        { "/sd_status",     HTTP_GET,  sd_status_get_handler,      NULL },
+        { "/sd_mount",      HTTP_POST, sd_mount_post_handler,      NULL },
+        { "/sd_unmount",    HTTP_POST, sd_unmount_post_handler,    NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },
