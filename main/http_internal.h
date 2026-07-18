@@ -130,6 +130,9 @@ esp_err_t gallery_delete_image_post_handler(httpd_req_t *req);
 esp_err_t gallery_delete_post_handler(httpd_req_t *req);
 esp_err_t gallery_images_get_handler(httpd_req_t *req);
 esp_err_t gallery_image_get_handler(httpd_req_t *req);
+esp_err_t gallery_sd_images_get_handler(httpd_req_t *req);
+esp_err_t gallery_sd_import_post_handler(httpd_req_t *req);
+esp_err_t gallery_sd_backup_post_handler(httpd_req_t *req);
 
 /* ── canvas board HTML blob ── */
 extern const uint8_t board_html_start[] asm("_binary_board_html_start");

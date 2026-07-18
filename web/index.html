@@ -88,6 +88,9 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 .gcard .gname{font-size:11px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px}
 .gcard .gsz{font-size:11px;font-weight:700;color:var(--tx)}
 .gcard .gactions{padding:4px 10px 10px;display:flex;gap:6px}
+.gcard .gactions.wrap{flex-wrap:wrap}
+.sd-tools{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
+.sd-note{font-size:12px;color:var(--t2);line-height:1.45}
 .empty{text-align:center;padding:32px;color:var(--t2);font-size:14px}
 .fullcard{margin-top:0}
 .stack-col{display:flex;flex-direction:column;gap:18px;min-width:0}
@@ -444,7 +447,29 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
         <div class="sub">已存储的图片，点击「显示」推送到墨水屏。</div>
       </div>
       <div class="bd">
+        <div class="sd-tools">
+          <div class="sd-note">内部画廊保存在用户文件区；可批量备份到SD卡。</div>
+          <button class="btn ghost sm" onclick="backupAllImagesToSd()">全部备份到SD</button>
+        </div>
         <div id="gallery" class="gallery"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+
+    <div class="card fullcard">
+      <div class="hd">
+        <div class="title" style="font-size:16px">SD卡图片</div>
+        <div class="sub">读取 /sdcard/epd/images，可导入到内部画廊；未插卡时不影响上传和显示。</div>
+      </div>
+      <div class="bd">
+        <div class="sd-tools">
+          <div class="sd-note" id="sdGalleryStatus">SD卡默认断电，点击刷新时才会上电检测。</div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost sm" onclick="loadSdGallery()">刷新SD图片</button>
+            <button class="btn ghost sm" onclick="importAllSdImages()">全部导入</button>
+            <button class="btn ghost sm" onclick="unmountSdFromUpload()">卸载SD卡</button>
+          </div>
+        </div>
+        <div id="sdGallery" class="gallery"><div class="empty">尚未检测SD卡。</div></div>
       </div>
     </div>
     </div>
@@ -909,20 +934,157 @@ async function delImg(name){
   }catch(e){log('删除失败：'+e,'bad');}
 }
 
+async function backupImgToSd(name){
+  log('正在备份 '+name+' 到SD卡…');
+  try{
+    const r=await fetch('/sd_backup?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
+    const j=await r.json();
+    if(j.ok){
+      log('已备份到SD卡：'+name+'（'+fmt(j.bytes||0)+'）','ok');
+      await loadSdGallery();
+      await refresh();
+    }else{
+      log('SD卡不可用或备份失败：'+(j.error||j.message||r.status),'bad');
+    }
+  }catch(e){log('备份到SD卡失败：'+e,'bad');}
+}
+
+async function fetchInternalImages(){
+  const r=await fetch('/images',epdFetchOpts());
+  const j=await r.json();
+  return Array.isArray(j.items)?j.items:[];
+}
+
+async function backupAllImagesToSd(){
+  try{
+    const items=await fetchInternalImages();
+    if(!items.length){log('内部画廊暂无图片可备份。','bad');return;}
+    if(!confirm('将内部画廊 '+items.length+' 张图片备份到SD卡？同名文件会覆盖。'))return;
+    var ok=0,fail=0;
+    for(const item of items){
+      log('正在备份到SD卡：'+item.name+'（'+(ok+fail+1)+'/'+items.length+'）');
+      try{
+        const r=await fetch('/sd_backup?name='+encodeURIComponent(item.name),epdFetchOpts({method:'POST'}));
+        const j=await r.json();
+        if(j.ok) ok++; else fail++;
+      }catch(e){fail++;}
+    }
+    log('批量备份完成：成功 '+ok+' 张'+(fail?'，失败 '+fail+' 张':''),fail?'bad':'ok');
+    await loadSdGallery();
+    await refresh();
+  }catch(e){log('批量备份失败：'+e,'bad');}
+}
+
 async function loadGallery(){
   const g=document.getElementById('gallery');
   try{
-    const r=await fetch('/images',epdFetchOpts()); const j=await r.json();
-    if(!j.items||j.items.length===0){g.innerHTML='<div class="empty">暂无图片，上传一张试试。</div>';return;}
-    g.innerHTML=j.items.map(i=>`<div class="gcard">
+    const items=await fetchInternalImages();
+    if(!items.length){g.innerHTML='<div class="empty">暂无图片，上传一张试试。</div>';return;}
+    g.innerHTML=items.map(i=>`<div class="gcard">
       <div class="gthumb"><img data-name="${i.name}" loading="lazy" alt="${i.name}"><div class="ph">缩略图加载中…</div></div>
       <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
-      <div class="gactions">
+      <div class="gactions wrap">
         <button class="btn sm" onclick="showImg('${i.name}')">显示</button>
         <button class="btn ghost sm" onclick="delImg('${i.name}')">删除</button>
+        <button class="btn ghost sm" onclick="backupImgToSd('${i.name}')">备份SD</button>
       </div></div>`).join('');
     loadGalleryThumbs(g);
   }catch(e){g.innerHTML='<div class="empty bad">画廊加载失败</div>';}
+}
+
+async function fetchSdImages(){
+  const r=await fetch('/sd_images',epdFetchOpts());
+  return await r.json();
+}
+
+async function loadSdGallery(){
+  const g=document.getElementById('sdGallery');
+  const st=document.getElementById('sdGalleryStatus');
+  if(st) st.textContent='正在检测SD卡…';
+  if(g) g.innerHTML='<div class="empty">正在读取SD卡图片…</div>';
+  try{
+    const j=await fetchSdImages();
+    if(!j.ok||!j.sd_available){
+      const err=j.last_error&&j.last_error!=='ESP_OK'?j.last_error:'未检测到可用SD卡';
+      if(st) st.textContent='SD卡不可用：'+err+'。内部画廊可继续正常使用。';
+      if(g) g.innerHTML='<div class="empty">未插卡或未挂载，SD图片功能暂不可用。</div>';
+      await refresh();
+      return;
+    }
+    const total=Number(j.total_bytes)||0;
+    const free=Number(j.free_bytes)||0;
+    if(st) st.textContent='SD卡已挂载，剩余 '+(total>0?fmt(free):'未知')+' / 总 '+(total>0?fmt(total):(j.capacity_mb?j.capacity_mb+' MB':'未知'));
+    if(!j.items||j.items.length===0){
+      if(g) g.innerHTML='<div class="empty">SD卡 /epd/images 里暂无图片。</div>';
+      await refresh();
+      return;
+    }
+    if(g) g.innerHTML=j.items.map(i=>`<div class="gcard">
+      <div class="gthumb"><div class="ph">SD卡图片</div></div>
+      <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
+      <div class="gactions wrap">
+        <button class="btn sm" onclick="importSdImg('${i.name}')">导入</button>
+      </div></div>`).join('');
+    await refresh();
+  }catch(e){
+    if(st) st.textContent='SD卡读取失败，内部画廊可继续正常使用。';
+    if(g) g.innerHTML='<div class="empty bad">SD图片列表读取失败</div>';
+  }
+}
+
+async function importSdImg(name){
+  log('正在从SD卡导入 '+name+' 到内部画廊…');
+  try{
+    const r=await fetch('/sd_import?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
+    const j=await r.json();
+    if(j.ok){
+      log('已导入：'+name+'（'+fmt(j.bytes||0)+'）','ok');
+      await loadGallery();
+      await refresh();
+    }else{
+      log('导入失败：'+(j.error||j.message||r.status),'bad');
+    }
+  }catch(e){log('导入失败：'+e,'bad');}
+}
+
+async function importAllSdImages(){
+  log('正在读取SD卡图片列表…');
+  try{
+    const j=await fetchSdImages();
+    if(!j.ok||!j.sd_available){
+      log('SD卡不可用，无法批量导入：'+(j.last_error||'未检测到可用SD卡'),'bad');
+      await loadSdGallery();
+      return;
+    }
+    const items=Array.isArray(j.items)?j.items:[];
+    if(!items.length){log('SD卡 /epd/images 里暂无图片可导入。','bad');return;}
+    if(!confirm('将SD卡 '+items.length+' 张图片导入内部画廊？同名文件会覆盖。'))return;
+    var ok=0,fail=0;
+    for(const item of items){
+      log('正在导入：'+item.name+'（'+(ok+fail+1)+'/'+items.length+'）');
+      try{
+        const r=await fetch('/sd_import?name='+encodeURIComponent(item.name),epdFetchOpts({method:'POST'}));
+        const ret=await r.json();
+        if(ret.ok) ok++; else fail++;
+      }catch(e){fail++;}
+    }
+    log('批量导入完成：成功 '+ok+' 张'+(fail?'，失败 '+fail+' 张':''),fail?'bad':'ok');
+    await loadGallery();
+    await refresh();
+  }catch(e){log('批量导入失败：'+e,'bad');}
+}
+
+async function unmountSdFromUpload(){
+  const st=document.getElementById('sdGalleryStatus');
+  try{
+    const r=await fetch('/sd_unmount',epdFetchOpts({method:'POST'}));
+    const j=await r.json();
+    if(st) st.textContent=j.ok?'SD卡已卸载并断电。':'SD卡卸载失败：'+(j.last_error||r.status);
+    const g=document.getElementById('sdGallery');
+    if(g&&j.ok) g.innerHTML='<div class="empty">SD卡已断电。</div>';
+    await refresh();
+    log(j.ok?'SD卡已卸载并断电。':'SD卡卸载失败：'+(j.last_error||r.status),j.ok?'ok':'bad');
+  }catch(e){log('SD卡卸载失败：'+e,'bad');}
 }
 
 async function loadGalleryThumbs(root){

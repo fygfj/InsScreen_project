@@ -2089,6 +2089,8 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
           <div class="side-body">
             <div class="compact-actions">
               <button class="btn primary" onclick="exportConfig()">导出配置</button>
+              <button class="btn ghost" onclick="backupConfigToSd()">备份到SD</button>
+              <button class="btn ghost" onclick="restoreConfigFromSd()">从SD恢复</button>
               <label class="btn ghost" style="cursor:pointer">
                 导入配置
                 <input type="file" id="importFile" accept=".json" style="display:none" onchange="importConfig(this)">
@@ -2959,15 +2961,36 @@ async function readSensorNow(){
 
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
+async function collectBackupConfig(){
+  var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
+  var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
+  var backup={_version:1,_date:new Date().toISOString()};
+  for(var i=0;i<endpoints.length;i++){
+    try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
+  }
+  return backup;
+}
+
+async function applyBackupConfig(backup){
+  if(!backup||!backup._version)throw new Error('文件格式无效，请使用导出的备份文件');
+  var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
+    timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config',sensor:'/sensor_config'};
+  var ok=0,fail=0;
+  for(var key in map){
+    if(!backup[key])continue;
+    try{
+      var r=await fetch(map[key],epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])}));
+      if(!r.ok)throw new Error(key+' HTTP '+r.status);
+      ok++;
+    }catch(e){fail++;}
+  }
+  return {ok:ok,fail:fail};
+}
+
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
-    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
-    var backup={_version:1,_date:new Date().toISOString()};
-    for(var i=0;i<endpoints.length;i++){
-      try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
-    }
+    var backup=await collectBackupConfig();
     var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
     var a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
@@ -2978,25 +3001,43 @@ async function exportConfig(){
   }catch(e){bkLog('导出失败：'+e,'bad');}
 }
 
+async function backupConfigToSd(){
+  bkLog('正在收集配置并写入SD卡…');
+  try{
+    var backup=await collectBackupConfig();
+    var body=JSON.stringify(backup,null,2);
+    var r=await fetch('/sd_config_backup',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:body}));
+    var j=await r.json();
+    if(j.ok)bkLog('配置已备份到SD：'+(j.path||'/sdcard/epd/backup/epd_config_backup.json')+'，大小 '+(j.bytes||body.length)+' 字节。','ok');
+    else bkLog('SD备份失败：'+(j.error||r.status)+'。未插卡时不影响本机配置。','bad');
+  }catch(e){bkLog('SD备份失败：'+e,'bad');}
+}
+
+async function restoreConfigFromSd(){
+  if(!confirm('从SD卡恢复配置？访问认证不会被恢复，当前配置会被覆盖。'))return;
+  bkLog('正在从SD卡读取配置备份…');
+  try{
+    var r=await fetch('/sd_config_backup',epdFetchOpts({}));
+    if(!r.ok){
+      var t=await r.text().catch(function(){return '';});
+      bkLog('SD恢复失败：'+(t||r.status)+'。','bad');
+      return;
+    }
+    var backup=await r.json();
+    var ret=await applyBackupConfig(backup);
+    bkLog('SD恢复完成！成功 '+ret.ok+' 项'+(ret.fail?' ，失败 '+ret.fail+' 项':'')+'。页面将刷新…','ok');
+    setTimeout(function(){location.reload();},1500);
+  }catch(e){bkLog('SD恢复失败：'+e,'bad');}
+}
+
 async function importConfig(input){
   if(!input.files.length)return;
   bkLog('正在读取备份文件…');
   try{
     var text=await input.files[0].text();
     var backup=JSON.parse(text);
-    if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
-    var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config',sensor:'/sensor_config'};
-    var ok=0,fail=0;
-    for(var key in map){
-      if(!backup[key])continue;
-      try{
-        var r=await fetch(map[key],epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])}));
-        if(!r.ok)throw new Error(key+' HTTP '+r.status);
-        ok++;
-      }catch(e){fail++;}
-    }
-    bkLog('导入完成！成功 '+ok+' 项'+(fail?' ，失败 '+fail+' 项':'')+'。页面将刷新…','ok');
+    var ret=await applyBackupConfig(backup);
+    bkLog('导入完成！成功 '+ret.ok+' 项'+(ret.fail?' ，失败 '+ret.fail+' 项':'')+'。页面将刷新…','ok');
     setTimeout(function(){location.reload();},1500);
   }catch(e){bkLog('导入失败：'+e,'bad');}
   input.value='';

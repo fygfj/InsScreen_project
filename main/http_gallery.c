@@ -22,6 +22,7 @@
 #include "fb_render.h"
 #include "image_convert.h"
 #include "scheduler.h"
+#include "sd_card.h"
 #include "spiffs_mount.h"
 #include "weather.h"
 #include "button.h"
@@ -103,6 +104,104 @@ static bool is_safe_filename(const char *name)
             return false;
     }
     return true;
+}
+
+static bool gallery_is_image_filename(const char *name)
+{
+    if (!is_safe_filename(name))
+        return false;
+
+    size_t len = strlen(name);
+    return (len > 4 && strcasecmp(name + len - 4, ".jpg") == 0) ||
+           (len > 5 && strcasecmp(name + len - 5, ".jpeg") == 0) ||
+           (len > 4 && strcasecmp(name + len - 4, ".png") == 0) ||
+           (len > 4 && strcasecmp(name + len - 4, ".bmp") == 0);
+}
+
+static esp_err_t gallery_ensure_sd_available(sd_card_status_t *status)
+{
+    esp_err_t err = sd_card_mount();
+    if (status)
+        sd_card_get_status(status);
+    if (err != ESP_OK)
+        return err;
+    if (status && (!status->mounted || !status->dirs_ready))
+        return status->last_dir_error != ESP_OK ? status->last_dir_error : ESP_ERR_INVALID_STATE;
+    return ESP_OK;
+}
+
+static esp_err_t gallery_copy_file(const char *src_path, const char *dst_path, size_t *out_bytes)
+{
+    FILE *src = fopen(src_path, "rb");
+    if (!src)
+        return ESP_ERR_NOT_FOUND;
+
+    FILE *dst = fopen(dst_path, "wb");
+    if (!dst) {
+        fclose(src);
+        return ESP_FAIL;
+    }
+
+    char *buf = malloc(2048);
+    if (!buf) {
+        fclose(src);
+        fclose(dst);
+        remove(dst_path);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = ESP_OK;
+    size_t total = 0;
+    while (true) {
+        size_t r = fread(buf, 1, 2048, src);
+        if (r > 0) {
+            if (fwrite(buf, 1, r, dst) != r) {
+                err = ESP_FAIL;
+                break;
+            }
+            total += r;
+        }
+        if (r < 2048) {
+            if (ferror(src))
+                err = ESP_FAIL;
+            break;
+        }
+    }
+
+    free(buf);
+    if (fclose(dst) != 0 && err == ESP_OK)
+        err = ESP_FAIL;
+    fclose(src);
+
+    if (err != ESP_OK) {
+        remove(dst_path);
+        return err;
+    }
+    if (out_bytes)
+        *out_bytes = total;
+    return ESP_OK;
+}
+
+static esp_err_t gallery_send_sd_op_json(httpd_req_t *req, bool ok, esp_err_t err,
+                                         const char *name, size_t bytes,
+                                         const char *message)
+{
+    char esc_name[80];
+    char esc_msg[96];
+    json_escape(esc_name, sizeof(esc_name), name ? name : "");
+    json_escape(esc_msg, sizeof(esc_msg), message ? message : "");
+
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"ok\":%s,\"name\":\"%s\",\"bytes\":%u,\"error\":\"%s\",\"message\":\"%s\"}",
+             ok ? "true" : "false",
+             esc_name,
+             (unsigned)bytes,
+             esp_err_to_name(err),
+             esc_msg);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    return ESP_OK;
 }
 
 /** Image focus is transient. Display policy pauses background weather without rewriting NVS. */
@@ -215,6 +314,192 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
     httpd_resp_send(req, buf, (ssize_t)len);
     free(buf);
     return ESP_OK;
+}
+
+esp_err_t gallery_sd_images_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    sd_card_status_t sd = {0};
+    esp_err_t err = gallery_ensure_sd_available(&sd);
+    if (err != ESP_OK || !sd.mounted || !sd.dirs_ready) {
+        char json[384];
+        snprintf(json, sizeof(json),
+                 "{\"ok\":false,\"sd_available\":false,\"items\":[],"
+                 "\"mounted\":%s,\"dirs_ready\":%s,\"total_bytes\":%llu,"
+                 "\"free_bytes\":%llu,\"capacity_mb\":%u,\"last_error\":\"%s\","
+                 "\"dir_error\":\"%s\"}",
+                 sd.mounted ? "true" : "false",
+                 sd.dirs_ready ? "true" : "false",
+                 (unsigned long long)sd.total_bytes,
+                 (unsigned long long)sd.free_bytes,
+                 (unsigned)sd.capacity_mb,
+                 esp_err_to_name(err != ESP_OK ? err : sd.last_error),
+                 esp_err_to_name(sd.last_dir_error));
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, json);
+        return ESP_OK;
+    }
+
+    DIR *dir = opendir(SD_CARD_IMAGES_DIR);
+    if (!dir) {
+        (void)mkdir(SD_CARD_IMAGES_DIR, 0775);
+        dir = opendir(SD_CARD_IMAGES_DIR);
+    }
+    if (!dir) {
+        return gallery_send_sd_op_json(req, false, ESP_FAIL, NULL, 0, "open sd images dir failed");
+    }
+
+    size_t cap = 2048;
+    char *buf = malloc(cap);
+    if (!buf) {
+        closedir(dir);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+        return ESP_OK;
+    }
+
+    size_t len = 0;
+    (void)gallery_json_append(buf, cap, &len,
+                              "{\"ok\":true,\"sd_available\":true,\"mounted\":true,"
+                              "\"dirs_ready\":true,\"total_bytes\":%llu,\"free_bytes\":%llu,"
+                              "\"capacity_mb\":%u,\"items\":[",
+                              (unsigned long long)sd.total_bytes,
+                              (unsigned long long)sd.free_bytes,
+                              (unsigned)sd.capacity_mb);
+
+    struct dirent *ent;
+    bool first = true;
+    while ((ent = readdir(dir)) != NULL) {
+        if (ent->d_type != DT_REG && ent->d_type != DT_UNKNOWN) continue;
+        if (!gallery_is_image_filename(ent->d_name)) continue;
+
+        char path[192];
+        snprintf(path, sizeof(path), "%s/%.80s", SD_CARD_IMAGES_DIR, ent->d_name);
+        int sz = http_stat_size_or_neg(path);
+        if (sz < 0) continue;
+
+        size_t need = strlen(ent->d_name) + 48;
+        if (len + need >= cap) {
+            size_t newcap = cap * 2;
+            char *tmp = realloc(buf, newcap);
+            if (!tmp) {
+                ESP_LOGW(TAG, "/sd_images: realloc %u failed, truncating list", (unsigned)newcap);
+                break;
+            }
+            buf = tmp;
+            cap = newcap;
+        }
+
+        if (!first) {
+            if (len + 1 < cap)
+                buf[len++] = ',';
+            else
+                break;
+        }
+        first = false;
+
+        char esc_name[80];
+        json_escape(esc_name, sizeof(esc_name), ent->d_name);
+        if (!gallery_json_append(buf, cap, &len,
+                                 "{\"name\":\"%s\",\"bytes\":%d}", esc_name, sz))
+            break;
+    }
+    closedir(dir);
+
+    (void)gallery_json_append(buf, cap, &len, "]}");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, buf, (ssize_t)len);
+    free(buf);
+    return ESP_OK;
+}
+
+esp_err_t gallery_sd_import_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    if (!spiffs_mount_is_mounted()) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_INVALID_STATE,
+                                       NULL, 0, "internal storage unavailable");
+    }
+
+    char name[64];
+    if (!http_get_query_param(req, "name", name, sizeof(name)) ||
+        !gallery_is_image_filename(name)) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_INVALID_ARG,
+                                       NULL, 0, "invalid image name");
+    }
+
+    sd_card_status_t sd = {0};
+    esp_err_t err = gallery_ensure_sd_available(&sd);
+    if (err != ESP_OK || !sd.mounted || !sd.dirs_ready) {
+        return gallery_send_sd_op_json(req, false, err != ESP_OK ? err : ESP_ERR_INVALID_STATE,
+                                       name, 0, "sd card unavailable");
+    }
+
+    char src_path[192];
+    char dst_path[160];
+    snprintf(src_path, sizeof(src_path), "%s/%s", SD_CARD_IMAGES_DIR, name);
+    snprintf(dst_path, sizeof(dst_path), "%s/%s", http_images_dir, name);
+
+    int src_size = http_stat_size_or_neg(src_path);
+    if (src_size <= 0) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_NOT_FOUND,
+                                       name, 0, "sd image not found");
+    }
+    if (src_size > http_upload_max_bytes) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_INVALID_SIZE,
+                                       name, (size_t)src_size, "image too large");
+    }
+
+    (void)mkdir(http_images_dir, 0755);
+    size_t copied = 0;
+    err = gallery_copy_file(src_path, dst_path, &copied);
+    ESP_LOGI(TAG, "SD import %s -> %s: %s (%u bytes)",
+             src_path, dst_path, esp_err_to_name(err), (unsigned)copied);
+    return gallery_send_sd_op_json(req, err == ESP_OK, err, name, copied,
+                                   err == ESP_OK ? "imported" : "import failed");
+}
+
+esp_err_t gallery_sd_backup_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    if (!spiffs_mount_is_mounted()) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_INVALID_STATE,
+                                       NULL, 0, "internal storage unavailable");
+    }
+
+    char name[64];
+    if (!http_get_query_param(req, "name", name, sizeof(name)) ||
+        !gallery_is_image_filename(name)) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_INVALID_ARG,
+                                       NULL, 0, "invalid image name");
+    }
+
+    char src_path[160];
+    snprintf(src_path, sizeof(src_path), "%s/%s", http_images_dir, name);
+    int src_size = http_stat_size_or_neg(src_path);
+    if (src_size <= 0) {
+        return gallery_send_sd_op_json(req, false, ESP_ERR_NOT_FOUND,
+                                       name, 0, "internal image not found");
+    }
+
+    sd_card_status_t sd = {0};
+    esp_err_t err = gallery_ensure_sd_available(&sd);
+    if (err != ESP_OK || !sd.mounted || !sd.dirs_ready) {
+        return gallery_send_sd_op_json(req, false, err != ESP_OK ? err : ESP_ERR_INVALID_STATE,
+                                       name, 0, "sd card unavailable");
+    }
+
+    char dst_path[192];
+    snprintf(dst_path, sizeof(dst_path), "%s/%s", SD_CARD_IMAGES_DIR, name);
+
+    size_t copied = 0;
+    err = gallery_copy_file(src_path, dst_path, &copied);
+    ESP_LOGI(TAG, "SD backup %s -> %s: %s (%u bytes)",
+             src_path, dst_path, esp_err_to_name(err), (unsigned)copied);
+    return gallery_send_sd_op_json(req, err == ESP_OK, err, name, copied,
+                                   err == ESP_OK ? "backed up" : "backup failed");
 }
 
 esp_err_t gallery_image_get_handler(httpd_req_t *req)

@@ -15,6 +15,8 @@ extern "C" {
 #define SD_CARD_IMAGES_DIR  SD_CARD_APP_DIR "/images"
 #define SD_CARD_BACKUP_DIR  SD_CARD_APP_DIR "/backup"
 #define SD_CARD_LOGS_DIR    SD_CARD_APP_DIR "/logs"
+#define SD_CARD_CONFIG_BACKUP_PATH SD_CARD_BACKUP_DIR "/epd_config_backup.json"
+#define SD_CARD_CONFIG_BACKUP_TMP_PATH SD_CARD_BACKUP_DIR "/epd_config_backup.tmp"
 
 #define SD_CARD_PWR_EN_GPIO GPIO_NUM_21
 #define SD_CARD_CLK_GPIO    GPIO_NUM_48

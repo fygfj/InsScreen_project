@@ -73,6 +73,7 @@ const int         http_upload_max_bytes = 2 * 1024 * 1024;
 #define AUTH_NVS_USER "user"
 #define AUTH_NVS_PASS "pass"
 #define EPD_REPAIR_TASK_STACK 4096
+#define SD_CONFIG_BACKUP_MAX_BYTES (64 * 1024)
 
 static char s_auth_user[32];
 static char s_auth_pass[64];
@@ -1750,6 +1751,117 @@ static esp_err_t sd_unmount_post_handler(httpd_req_t *req)
     return sd_card_send_json(req, err);
 }
 
+static esp_err_t sd_config_backup_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    if (req->content_len <= 0 || req->content_len > SD_CONFIG_BACKUP_MAX_BYTES) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid backup size");
+        return ESP_OK;
+    }
+
+    esp_err_t err = sd_card_mount();
+    if (err != ESP_OK) {
+        char json[96];
+        snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\"}", esp_err_to_name(err));
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, json);
+        return ESP_OK;
+    }
+
+    FILE *f = fopen(SD_CARD_CONFIG_BACKUP_TMP_PATH, "wb");
+    if (!f) {
+        char json[96];
+        snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\"}", esp_err_to_name(ESP_FAIL));
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, json);
+        return ESP_OK;
+    }
+
+    char buf[1024];
+    int remaining = req->content_len;
+    size_t written_total = 0;
+    bool ok = true;
+    while (remaining > 0) {
+        int to_recv = remaining > (int)sizeof(buf) ? (int)sizeof(buf) : remaining;
+        int r = httpd_req_recv(req, buf, to_recv);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        if (r <= 0) {
+            ok = false;
+            break;
+        }
+        if (fwrite(buf, 1, (size_t)r, f) != (size_t)r) {
+            ok = false;
+            break;
+        }
+        written_total += (size_t)r;
+        remaining -= r;
+    }
+    if (fclose(f) != 0)
+        ok = false;
+
+    if (!ok) {
+        remove(SD_CARD_CONFIG_BACKUP_TMP_PATH);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "backup write failed");
+        return ESP_OK;
+    }
+
+    remove(SD_CARD_CONFIG_BACKUP_PATH);
+    if (rename(SD_CARD_CONFIG_BACKUP_TMP_PATH, SD_CARD_CONFIG_BACKUP_PATH) != 0) {
+        remove(SD_CARD_CONFIG_BACKUP_TMP_PATH);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "backup commit failed");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "SD config backup saved: %s (%u bytes)",
+             SD_CARD_CONFIG_BACKUP_PATH, (unsigned)written_total);
+
+    char json[160];
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"path\":\"%s\",\"bytes\":%u}",
+             SD_CARD_CONFIG_BACKUP_PATH, (unsigned)written_total);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    return ESP_OK;
+}
+
+static esp_err_t sd_config_backup_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    esp_err_t err = sd_card_mount();
+    if (err != ESP_OK) {
+        char json[96];
+        snprintf(json, sizeof(json), "{\"ok\":false,\"error\":\"%s\"}", esp_err_to_name(err));
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, json);
+        return ESP_OK;
+    }
+
+    FILE *f = fopen(SD_CARD_CONFIG_BACKUP_PATH, "rb");
+    if (!f) {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"ESP_ERR_NOT_FOUND\"}");
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    char buf[1024];
+    size_t r;
+    while ((r = fread(buf, 1, sizeof(buf), f)) > 0) {
+        if (httpd_resp_send_chunk(req, buf, (ssize_t)r) != ESP_OK) {
+            fclose(f);
+            httpd_resp_send_chunk(req, NULL, 0);
+            return ESP_OK;
+        }
+    }
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static cJSON *sensor_status_json(void)
 {
     sensor_local_data_t data = {0};
@@ -2144,7 +2256,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 8;
     config.send_wait_timeout  = 15;
-    config.max_uri_handlers   = 90;
+    config.max_uri_handlers   = 96;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
@@ -2174,6 +2286,9 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/show",          HTTP_POST, gallery_show_post_handler,         NULL },
         { "/delete_image",  HTTP_POST, gallery_delete_image_post_handler, NULL },
         { "/delete",        HTTP_POST, gallery_delete_post_handler,       NULL },
+        { "/sd_images",     HTTP_GET,  gallery_sd_images_get_handler,     NULL },
+        { "/sd_import",     HTTP_POST, gallery_sd_import_post_handler,    NULL },
+        { "/sd_backup",     HTTP_POST, gallery_sd_backup_post_handler,    NULL },
         /* wifi & panel config (http_app.c) */
         { "/wifi_status",   HTTP_GET,  wifi_status_get_handler,    NULL },
         { "/scan",          HTTP_GET,  scan_get_handler,           NULL },
@@ -2233,6 +2348,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/sd_status",     HTTP_GET,  sd_status_get_handler,      NULL },
         { "/sd_mount",      HTTP_POST, sd_mount_post_handler,      NULL },
         { "/sd_unmount",    HTTP_POST, sd_unmount_post_handler,    NULL },
+        { "/sd_config_backup", HTTP_GET,  sd_config_backup_get_handler,  NULL },
+        { "/sd_config_backup", HTTP_POST, sd_config_backup_post_handler, NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },

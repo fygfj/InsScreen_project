@@ -91,7 +91,7 @@ static esp_err_t sd_card_ensure_vfs_locked(void)
     esp_vfs_fat_conf_t conf = {
         .base_path = SD_CARD_MOUNT_POINT,
         .fat_drive = drv,
-        .max_files = 2,
+        .max_files = 3,
     };
     err = esp_vfs_fat_register(&conf, &s_fs);
     if (err != ESP_OK)
@@ -177,10 +177,31 @@ static esp_err_t sd_card_ensure_dirs_locked(void)
     return ESP_OK;
 }
 
+static uint32_t sd_card_fatfs_sector_size(const FATFS *fs)
+{
+#if FF_MAX_SS != FF_MIN_SS
+    if (fs && fs->ssize)
+        return fs->ssize;
+#endif
+    return FF_MIN_SS;
+}
+
 static void sd_card_update_fs_info_locked(sd_card_status_t *st)
 {
     if (!st || !s_mounted)
         return;
+
+    char drv[3];
+    DWORD free_clusters = 0;
+    FATFS *fs = NULL;
+    FRESULT fr = f_getfree(sd_card_drive_path_locked(drv), &free_clusters, &fs);
+    if (fr == FR_OK && fs) {
+        uint32_t sector_size = sd_card_fatfs_sector_size(fs);
+        uint64_t cluster_size = (uint64_t)fs->csize * sector_size;
+        st->total_bytes = (uint64_t)(fs->n_fatent - 2) * cluster_size;
+        st->free_bytes = (uint64_t)free_clusters * cluster_size;
+        return;
+    }
 
     struct statvfs vfs;
     if (statvfs(SD_CARD_MOUNT_POINT, &vfs) == 0) {
