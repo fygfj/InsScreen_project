@@ -48,6 +48,7 @@
 #include "buzzer.h"
 #include "sensor_local.h"
 #include "sd_card.h"
+#include "diag_log.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -1862,6 +1863,31 @@ static esp_err_t sd_config_backup_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t sd_log_export_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char path[128] = "";
+    size_t bytes = 0;
+    esp_err_t err = diag_log_export_to_sd(path, sizeof(path), &bytes);
+
+    char esc_path[160];
+    json_escape(esc_path, sizeof(esc_path), path);
+
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"ok\":%s,\"path\":\"%s\",\"bytes\":%u,\"buffer_used\":%u,"
+             "\"error\":\"%s\"}",
+             err == ESP_OK ? "true" : "false",
+             esc_path,
+             (unsigned)bytes,
+             (unsigned)diag_log_buffer_used(),
+             esp_err_to_name(err));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    return ESP_OK;
+}
+
 static cJSON *sensor_status_json(void)
 {
     sensor_local_data_t data = {0};
@@ -2350,6 +2376,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/sd_unmount",    HTTP_POST, sd_unmount_post_handler,    NULL },
         { "/sd_config_backup", HTTP_GET,  sd_config_backup_get_handler,  NULL },
         { "/sd_config_backup", HTTP_POST, sd_config_backup_post_handler, NULL },
+        { "/sd_log_export", HTTP_POST, sd_log_export_post_handler, NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },

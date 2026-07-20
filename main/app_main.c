@@ -26,6 +26,7 @@
 #include "countdown.h"
 #include "codex_quota.h"
 #include "nvs_utils.h"
+#include "diag_log.h"
 #include "display_mode.h"
 #include "battery_mon.h"
 #include "buzzer.h"
@@ -840,6 +841,7 @@ void app_main(void)
         ESP_ERROR_CHECK(err);
     }
     ESP_ERROR_CHECK(nvs_utils_init());
+    diag_log_init();
 
     ESP_ERROR_CHECK(power_mgr_init());
     ESP_ERROR_CHECK(sd_card_init());

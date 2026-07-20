@@ -2091,6 +2091,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
               <button class="btn primary" onclick="exportConfig()">导出配置</button>
               <button class="btn ghost" onclick="backupConfigToSd()">备份到SD</button>
               <button class="btn ghost" onclick="restoreConfigFromSd()">从SD恢复</button>
+              <button class="btn ghost" onclick="exportDiagLogToSd()">导出诊断日志</button>
               <label class="btn ghost" style="cursor:pointer">
                 导入配置
                 <input type="file" id="importFile" accept=".json" style="display:none" onchange="importConfig(this)">
@@ -3028,6 +3029,20 @@ async function restoreConfigFromSd(){
     bkLog('SD恢复完成！成功 '+ret.ok+' 项'+(ret.fail?' ，失败 '+ret.fail+' 项':'')+'。页面将刷新…','ok');
     setTimeout(function(){location.reload();},1500);
   }catch(e){bkLog('SD恢复失败：'+e,'bad');}
+}
+
+async function exportDiagLogToSd(){
+  bkLog('正在导出诊断日志到SD卡…');
+  try{
+    var r=await fetch('/sd_log_export',epdFetchOpts({method:'POST'}));
+    var j=await r.json();
+    if(j.ok){
+      bkLog('诊断日志已导出：'+(j.path||'/sdcard/epd/logs/')+'，大小 '+fmtBytes(j.bytes||0)+'。','ok');
+    }else{
+      bkLog('诊断日志导出失败：'+(j.error||r.status)+'。未插卡时不影响其他功能。','bad');
+    }
+    await loadStatus(true);
+  }catch(e){bkLog('诊断日志导出失败：'+e,'bad');}
 }
 
 async function importConfig(input){

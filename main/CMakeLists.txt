@@ -34,6 +34,7 @@ idf_component_register(
         "countdown.c"
         "codex_quota.c"
         "nvs_utils.c"
+        "diag_log.c"
         "http_gallery.c"
         "http_features.c"
         "http_canvas.c"
