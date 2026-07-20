@@ -2313,6 +2313,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/delete_image",  HTTP_POST, gallery_delete_image_post_handler, NULL },
         { "/delete",        HTTP_POST, gallery_delete_post_handler,       NULL },
         { "/sd_images",     HTTP_GET,  gallery_sd_images_get_handler,     NULL },
+        { "/sd_image",      HTTP_GET,  gallery_sd_image_get_handler,      NULL },
         { "/sd_import",     HTTP_POST, gallery_sd_import_post_handler,    NULL },
         { "/sd_backup",     HTTP_POST, gallery_sd_backup_post_handler,    NULL },
         /* wifi & panel config (http_app.c) */

@@ -62,13 +62,12 @@ static void sd_card_power_off_locked(void)
     (void)gpio_set_direction(SD_CARD_PWR_EN_GPIO, GPIO_MODE_OUTPUT);
     (void)gpio_set_level(SD_CARD_PWR_EN_GPIO, 1);
     (void)gpio_set_pull_mode(SD_CARD_PWR_EN_GPIO, GPIO_PULLUP_ONLY);
-    (void)gpio_hold_en(SD_CARD_PWR_EN_GPIO);
-    gpio_deep_sleep_hold_en();
     s_powered = false;
 }
 
 static void sd_card_power_on_locked(void)
 {
+    gpio_deep_sleep_hold_dis();
     (void)gpio_hold_dis(SD_CARD_PWR_EN_GPIO);
     (void)gpio_set_direction(SD_CARD_PWR_EN_GPIO, GPIO_MODE_OUTPUT);
     (void)gpio_set_pull_mode(SD_CARD_PWR_EN_GPIO, GPIO_FLOATING);
@@ -365,7 +364,16 @@ esp_err_t sd_card_unmount(void)
 
 esp_err_t sd_card_prepare_sleep(void)
 {
-    return sd_card_unmount();
+    esp_err_t err = sd_card_unmount();
+    if (err == ESP_OK) {
+        (void)gpio_hold_dis(SD_CARD_PWR_EN_GPIO);
+        (void)gpio_set_direction(SD_CARD_PWR_EN_GPIO, GPIO_MODE_OUTPUT);
+        (void)gpio_set_level(SD_CARD_PWR_EN_GPIO, 1);
+        (void)gpio_set_pull_mode(SD_CARD_PWR_EN_GPIO, GPIO_PULLUP_ONLY);
+        (void)gpio_hold_en(SD_CARD_PWR_EN_GPIO);
+        gpio_deep_sleep_hold_en();
+    }
+    return err;
 }
 
 void sd_card_get_status(sd_card_status_t *out)

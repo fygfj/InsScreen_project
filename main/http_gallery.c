@@ -118,6 +118,43 @@ static bool gallery_is_image_filename(const char *name)
            (len > 4 && strcasecmp(name + len - 4, ".bmp") == 0);
 }
 
+static const char *gallery_image_mime_for_name(const char *name)
+{
+    size_t nlen = name ? strlen(name) : 0;
+    if (nlen > 4 && strcasecmp(name + nlen - 4, ".png") == 0)
+        return "image/png";
+    if (nlen > 4 && strcasecmp(name + nlen - 4, ".bmp") == 0)
+        return "image/bmp";
+    return "image/jpeg";
+}
+
+static esp_err_t gallery_stream_image_file(httpd_req_t *req,
+                                           const char *path,
+                                           const char *name)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "文件未找到");
+        return ESP_OK;
+    }
+
+    httpd_resp_set_type(req, gallery_image_mime_for_name(name));
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+
+    char buf[1024];
+    size_t r;
+    while ((r = fread(buf, 1, sizeof(buf), f)) > 0) {
+        if (httpd_resp_send_chunk(req, buf, (ssize_t)r) != ESP_OK) {
+            fclose(f);
+            httpd_resp_send_chunk(req, NULL, 0);
+            return ESP_OK;
+        }
+    }
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static esp_err_t gallery_ensure_sd_available(sd_card_status_t *status)
 {
     esp_err_t err = sd_card_mount();
@@ -519,30 +556,34 @@ esp_err_t gallery_image_get_handler(httpd_req_t *req)
     char path[160];
     snprintf(path, sizeof(path), "%s/%s", http_images_dir, name);
 
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "文件未找到");
+    return gallery_stream_image_file(req, path, name);
+}
+
+esp_err_t gallery_sd_image_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char name[64];
+    if (!http_get_query_param(req, "name", name, sizeof(name))) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少文件名");
+        return ESP_OK;
+    }
+    if (!gallery_is_image_filename(name)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "文件名无效");
         return ESP_OK;
     }
 
-    const char *mime = "image/jpeg";
-    size_t nlen = strlen(name);
-    if (nlen > 4 && strcasecmp(name + nlen - 4, ".png") == 0) mime = "image/png";
-    if (nlen > 4 && strcasecmp(name + nlen - 4, ".bmp") == 0) mime = "image/bmp";
-    httpd_resp_set_type(req, mime);
-
-    char buf[1024];
-    size_t r;
-    while ((r = fread(buf, 1, sizeof(buf), f)) > 0) {
-        if (httpd_resp_send_chunk(req, buf, r) != ESP_OK) {
-            fclose(f);
-            httpd_resp_send_chunk(req, NULL, 0);
-            return ESP_OK;
-        }
+    sd_card_status_t sd = {0};
+    esp_err_t err = gallery_ensure_sd_available(&sd);
+    if (err != ESP_OK || !sd.mounted || !sd.dirs_ready) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "SD卡不可用");
+        return ESP_OK;
     }
-    fclose(f);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
+
+    char path[192];
+    snprintf(path, sizeof(path), "%s/%s", SD_CARD_IMAGES_DIR, name);
+    return gallery_stream_image_file(req, path, name);
 }
 
 esp_err_t gallery_show_post_handler(httpd_req_t *req)

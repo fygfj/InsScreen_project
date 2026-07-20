@@ -993,8 +993,18 @@ async function loadGallery(){
 }
 
 async function fetchSdImages(){
-  const r=await fetch('/sd_images',epdFetchOpts());
-  return await r.json();
+  var ctrl=null,timer=0;
+  if(typeof AbortController!=='undefined'){
+    ctrl=new AbortController();
+    timer=setTimeout(function(){ctrl.abort();},18000);
+  }
+  try{
+    const r=await fetch('/sd_images',epdFetchOpts(ctrl?{signal:ctrl.signal}:{}));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return await r.json();
+  }finally{
+    if(timer)clearTimeout(timer);
+  }
 }
 
 async function loadSdGallery(){
@@ -1002,6 +1012,7 @@ async function loadSdGallery(){
   const st=document.getElementById('sdGalleryStatus');
   if(st) st.textContent='正在检测SD卡…';
   if(g) g.innerHTML='<div class="empty">正在读取SD卡图片…</div>';
+  log('正在读取SD卡图片列表…');
   try{
     const j=await fetchSdImages();
     if(!j.ok||!j.sd_available){
@@ -1020,15 +1031,18 @@ async function loadSdGallery(){
       return;
     }
     if(g) g.innerHTML=j.items.map(i=>`<div class="gcard">
-      <div class="gthumb"><div class="ph">SD卡图片</div></div>
+      <div class="gthumb"><img data-sd-name="${i.name}" loading="lazy" alt="${i.name}"><div class="ph">SD缩略图加载中…</div></div>
       <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
       <div class="gactions wrap">
         <button class="btn sm" onclick="importSdImg('${i.name}')">导入</button>
       </div></div>`).join('');
+    loadSdGalleryThumbs(g);
     await refresh();
   }catch(e){
-    if(st) st.textContent='SD卡读取失败，内部画廊可继续正常使用。';
-    if(g) g.innerHTML='<div class="empty bad">SD图片列表读取失败</div>';
+    const msg=e&&e.name==='AbortError'?'读取超时，请确认SD卡已插好并重新刷新。':'SD图片列表读取失败：'+e;
+    if(st) st.textContent=msg+' 内部画廊可继续正常使用。';
+    if(g) g.innerHTML='<div class="empty bad">'+msg+'</div>';
+    log(msg,'bad');
   }
 }
 
@@ -1112,6 +1126,36 @@ async function loadGalleryThumbs(root){
         box.classList.add('fail');
         const ph=box.querySelector('.ph');
         if(ph) ph.textContent=location.protocol==='file:'?'请通过设备地址打开页面':'缩略图加载失败';
+      }
+    }
+  }
+}
+
+async function loadSdGalleryThumbs(root){
+  const imgs=Array.from(root.querySelectorAll('img[data-sd-name]')).slice(0,8);
+  for(const img of imgs){
+    const box=img.closest('.gthumb');
+    try{
+      const name=img.getAttribute('data-sd-name');
+      const r=await fetch('/sd_image?name='+encodeURIComponent(name),epdFetchOpts());
+      if(!r.ok){
+        const t=await r.text().catch(()=>'');
+        if(box){
+          box.classList.add('fail');
+          const ph=box.querySelector('.ph');
+          if(ph) ph.textContent=r.status===401?'需要先在配置页保存访问认证':'SD缩略图读取失败：'+(t||r.status);
+        }
+        continue;
+      }
+      const blob=await r.blob();
+      if(!blob.size) throw new Error('空图片');
+      img.src=URL.createObjectURL(blob);
+      if(box) box.classList.add('loaded');
+    }catch(e){
+      if(box){
+        box.classList.add('fail');
+        const ph=box.querySelector('.ph');
+        if(ph) ph.textContent=location.protocol==='file:'?'请通过设备地址打开页面':'SD缩略图加载失败';
       }
     }
   }
