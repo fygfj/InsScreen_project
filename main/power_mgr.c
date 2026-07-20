@@ -343,6 +343,8 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
         if (berr == ESP_OK)
             vTaskDelay(pdMS_TO_TICKS(90));
     }
+    if (buzzer_is_initialized())
+        (void)buzzer_stop();
     nvs_flush_all();
     esp_err_t sd_err = sd_card_prepare_sleep();
     if (sd_err != ESP_OK) {

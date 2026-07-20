@@ -58,12 +58,20 @@ static void sd_card_set_io_high_z(void)
 static void sd_card_power_off_locked(void)
 {
     sd_card_set_io_high_z();
+    (void)gpio_hold_dis(SD_CARD_PWR_EN_GPIO);
+    (void)gpio_set_direction(SD_CARD_PWR_EN_GPIO, GPIO_MODE_OUTPUT);
     (void)gpio_set_level(SD_CARD_PWR_EN_GPIO, 1);
+    (void)gpio_set_pull_mode(SD_CARD_PWR_EN_GPIO, GPIO_PULLUP_ONLY);
+    (void)gpio_hold_en(SD_CARD_PWR_EN_GPIO);
+    gpio_deep_sleep_hold_en();
     s_powered = false;
 }
 
 static void sd_card_power_on_locked(void)
 {
+    (void)gpio_hold_dis(SD_CARD_PWR_EN_GPIO);
+    (void)gpio_set_direction(SD_CARD_PWR_EN_GPIO, GPIO_MODE_OUTPUT);
+    (void)gpio_set_pull_mode(SD_CARD_PWR_EN_GPIO, GPIO_FLOATING);
     (void)gpio_set_level(SD_CARD_PWR_EN_GPIO, 0);
     s_powered = true;
     vTaskDelay(pdMS_TO_TICKS(80));
@@ -225,15 +233,15 @@ esp_err_t sd_card_init(void)
     gpio_config_t pwr = {
         .pin_bit_mask = 1ULL << SD_CARD_PWR_EN_GPIO,
         .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     esp_err_t err = gpio_config(&pwr);
     if (err == ESP_OK) {
-        (void)gpio_set_level(SD_CARD_PWR_EN_GPIO, 1);
+        (void)gpio_hold_dis(SD_CARD_PWR_EN_GPIO);
+        sd_card_power_off_locked();
         sd_card_set_io_high_z();
-        s_powered = false;
         s_initialized = true;
         s_last_error = ESP_OK;
         ESP_LOGI(TAG, "ready: PWR_EN GPIO%d active-low, CLK GPIO%d, CMD GPIO%d, D0 GPIO%d",
