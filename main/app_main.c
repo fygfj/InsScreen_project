@@ -104,7 +104,7 @@ static void render_welcome_screen(void)
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     {
-        const char *title = "喵哎-MiaooAim";
+        const char *title = "Ink Screen_Cy";
         const int title_px = ui_layout_is_wide(fb) ? 32 : 24;
         const int title_x = 14 * sc;
         const int title_y = ui_layout_is_wide(fb) ? 14 * sc : 6 * sc;
@@ -338,8 +338,9 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 static void boot_display_route(void)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
+    display_policy_set_boot_display_active(true);
     display_policy_set_manual_screen_active(true);
-    unsigned boot_epoch = display_policy_display_epoch();
+    unsigned boot_epoch = display_policy_begin_manual_display();
 
     ESP_LOGI(TAG, "boot_display_route: showing welcome screen");
     render_welcome_screen();
@@ -347,7 +348,8 @@ static void boot_display_route(void)
     vTaskDelay(pdMS_TO_TICKS(10000));
 
     if (display_policy_display_epoch() != boot_epoch) {
-        ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
+        ESP_LOGI(TAG, "boot_display_route: canceled by newer user display request");
+        display_policy_set_boot_display_active(false);
         return;
     }
 
@@ -355,14 +357,15 @@ static void boot_display_route(void)
     int n = display_mode_count();
     bool write_mode_back = false;
     int mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
-    ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
+
+    ESP_LOGI(TAG, "boot_display_route: switching to saved mode %d (%s)",
              mode, display_mode_name(mode));
-    boot_epoch = 0;
-    esp_err_t err = display_mode_show_request(mode, &boot_epoch);
+    esp_err_t err = display_mode_show(mode);
     if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
         calendar_display_wait_render_idle();
     if (display_policy_display_epoch() != boot_epoch) {
-        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer display request");
+        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer user display request");
+        display_policy_set_boot_display_active(false);
         return;
     }
     /* 数据源不可用时（典型：轮播图但 SPIFFS 无图）回落到时钟，
@@ -370,23 +373,20 @@ static void boot_display_route(void)
     if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
         ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
                  mode, esp_err_to_name(err));
-        esp_err_t fallback_err = display_mode_show_request(DISPLAY_MODE_CLOCK, &boot_epoch);
-        if (fallback_err == ESP_OK) {
+        err = display_mode_show(DISPLAY_MODE_CLOCK);
+        if (err == ESP_OK)
             mode = DISPLAY_MODE_CLOCK;
-            err = fallback_err;
-        } else {
+        else
             ESP_LOGW(TAG, "boot_display_route: clock fallback failed (%s)",
-                     esp_err_to_name(fallback_err));
-            err = fallback_err;
-        }
+                     esp_err_to_name(err));
     }
     if (err == ESP_OK)
         button_set_current_mode(mode);
     /* 仅当原 NVS 值非法被纠正时才回写，避免把临时回落覆盖掉用户偏好 */
-    if (write_mode_back && err == ESP_OK) {
+    if (write_mode_back && err == ESP_OK)
         power_mgr_save_mode(mode);
-    }
 
+    display_policy_set_boot_display_active(false);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "boot_display_route: done, mode %d active%s",
                  mode, (mode != saved_mode) ? " (fallback)" : "");

@@ -10,6 +10,10 @@ void display_policy_init(void);
 void display_policy_set_quick_refresh_active(bool active);
 bool display_policy_quick_refresh_active(void);
 
+/** 上电欢迎页与恢复上次界面期间，后台自动刷新必须避让。 */
+void display_policy_set_boot_display_active(bool active);
+bool display_policy_boot_display_active(void);
+
 /** 幻灯片开启且应由轮播占用屏幕时 */
 bool display_policy_slideshow_owns_display(void);
 

@@ -7,6 +7,7 @@
 
 static atomic_bool s_manual_screen;
 static atomic_bool s_quick_refresh;
+static atomic_bool s_boot_display;
 static atomic_uint s_display_epoch;
 
 static bool weather_page_is_active(void)
@@ -18,6 +19,7 @@ void display_policy_init(void)
 {
     atomic_store(&s_manual_screen, false);
     atomic_store(&s_quick_refresh, false);
+    atomic_store(&s_boot_display, false);
     atomic_store(&s_display_epoch, 0);
 }
 
@@ -31,6 +33,16 @@ bool display_policy_quick_refresh_active(void)
     return atomic_load(&s_quick_refresh);
 }
 
+void display_policy_set_boot_display_active(bool active)
+{
+    atomic_store(&s_boot_display, active);
+}
+
+bool display_policy_boot_display_active(void)
+{
+    return atomic_load(&s_boot_display);
+}
+
 bool display_policy_slideshow_owns_display(void)
 {
     return display_mode_active() == DISPLAY_MODE_SLIDESHOW;
@@ -38,6 +50,8 @@ bool display_policy_slideshow_owns_display(void)
 
 bool display_policy_clock_may_auto_refresh(void)
 {
+    if (atomic_load(&s_boot_display))
+        return false;
     if (display_mode_active() != DISPLAY_MODE_CLOCK)
         return false;
     if (atomic_load(&s_manual_screen))
@@ -49,6 +63,8 @@ bool display_policy_clock_may_auto_refresh(void)
 
 bool display_policy_calendar_may_midnight_refresh(void)
 {
+    if (atomic_load(&s_boot_display))
+        return false;
     if (display_mode_active() != DISPLAY_MODE_CALENDAR)
         return false;
     return true;
@@ -58,6 +74,8 @@ bool display_policy_weather_use_full_page(bool user_explicit)
 {
     if (user_explicit)
         return true;
+    if (atomic_load(&s_boot_display))
+        return false;
     if (atomic_load(&s_quick_refresh))
         return false;
     if (display_policy_slideshow_owns_display())
@@ -75,6 +93,8 @@ bool display_policy_weather_may_network_fetch(bool user_explicit)
 {
     if (user_explicit)
         return true;
+    if (atomic_load(&s_boot_display))
+        return false;
     if (atomic_load(&s_quick_refresh))
         return false;
     return !display_policy_slideshow_owns_display();
@@ -82,6 +102,8 @@ bool display_policy_weather_may_network_fetch(bool user_explicit)
 
 bool display_policy_weather_may_render_full_page(void)
 {
+    if (atomic_load(&s_boot_display))
+        return false;
     if (atomic_load(&s_quick_refresh))
         return false;
     if (display_policy_slideshow_owns_display())
