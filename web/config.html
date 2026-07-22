@@ -1568,6 +1568,7 @@ body.config-page{
 .config-page .nav a::before{width:18px;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
 .config-page .nav a[href="/"]::before{content:"\1F5BC"}
 .config-page .nav a[href="/gallery"]::before{content:"\1F501"}
+.config-page .nav a[href="/news"]::before{content:"\1F4F0"}
 .config-page .nav a[href="/weather"]::before{content:"\1F324"}
 .config-page .nav a[href="/clock"]::before{content:"\1F550"}
 .config-page .nav a[href="/calendar"]::before{content:"\1F5D3"}
@@ -1683,6 +1684,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <nav class="nav" aria-label="页面导航">
       <a href="/">上传</a>
       <a href="/gallery">轮播</a>
+      <a href="/news">新闻</a>
       <a href="/weather">天气</a>
       <a href="/clock">时钟</a>
       <a href="/calendar">日历</a>
@@ -2963,8 +2965,8 @@ async function readSensorNow(){
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function collectBackupConfig(){
-  var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
-  var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
+  var endpoints=['/weather_config','/news_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
+  var names=['weather','news','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
   var backup={_version:1,_date:new Date().toISOString()};
   for(var i=0;i<endpoints.length;i++){
     try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -2974,7 +2976,7 @@ async function collectBackupConfig(){
 
 async function applyBackupConfig(backup){
   if(!backup||!backup._version)throw new Error('文件格式无效，请使用导出的备份文件');
-  var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
+  var map={weather:'/weather_config',news:'/news_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
     timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config',sensor:'/sensor_config'};
   var ok=0,fail=0;
   for(var key in map){

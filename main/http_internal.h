@@ -106,6 +106,8 @@ extern const uint8_t gallery_html_start[]   asm("_binary_gallery_html_start");
 extern const uint8_t gallery_html_end[]     asm("_binary_gallery_html_end");
 extern const uint8_t weather_html_start[]   asm("_binary_weather_html_start");
 extern const uint8_t weather_html_end[]     asm("_binary_weather_html_end");
+extern const uint8_t news_html_start[]      asm("_binary_news_html_start");
+extern const uint8_t news_html_end[]        asm("_binary_news_html_end");
 extern const uint8_t clock_html_start[]     asm("_binary_clock_html_start");
 extern const uint8_t clock_html_end[]       asm("_binary_clock_html_end");
 extern const uint8_t calendar_html_start[]  asm("_binary_calendar_html_start");

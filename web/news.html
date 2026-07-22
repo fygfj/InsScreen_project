@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>热点资讯</title>
+<script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('epd_theme')||'loopy')})()</script>
+<style>
+[data-theme="loopy"]{--bg:#FFF0F5;--cd:#fff;--cb:rgba(255,155,179,.22);--ch:rgba(255,155,179,.10);--cs:0 6px 28px rgba(255,155,179,.13);--sf:rgba(255,236,245,.75);--sb:rgba(255,155,179,.20);--tx:#5A3050;--t2:rgba(120,70,100,.62);--ac:#FF9BB3;--a2:#8CC8F0;--ag:rgba(255,155,179,.28);--bt:#fff;--ok:#2E9E52;--er:#E53935;--wn:#E68A00;--hv:rgba(255,155,179,.10);--tg:rgba(255,155,179,.22)}
+[data-theme="kitty"]{--bg:#FFF8F8;--cd:#fff;--cb:rgba(255,77,109,.17);--ch:rgba(255,77,109,.07);--cs:0 6px 28px rgba(255,77,109,.10);--sf:rgba(255,245,247,.8);--sb:rgba(255,77,109,.14);--tx:#4A1525;--t2:rgba(130,50,70,.58);--ac:#FF4D6D;--a2:#FFB347;--ag:rgba(255,77,109,.24);--bt:#fff;--ok:#2E9E52;--er:#D32F2F;--wn:#E68A00;--hv:rgba(255,77,109,.07);--tg:rgba(255,77,109,.15)}
+[data-theme="lotso"]{--bg:#FBF0F3;--cd:#fff;--cb:rgba(183,70,120,.17);--ch:rgba(183,70,120,.07);--cs:0 6px 28px rgba(183,70,120,.10);--sf:rgba(251,238,244,.8);--sb:rgba(183,70,120,.14);--tx:#4A1428;--t2:rgba(120,40,70,.58);--ac:#B74678;--a2:#E8A0B8;--ag:rgba(183,70,120,.24);--bt:#fff;--ok:#2E9E52;--er:#C62828;--wn:#E68A00;--hv:rgba(183,70,120,.07);--tg:rgba(183,70,120,.15)}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 36px}
+.hdr{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.title{font-size:22px;font-weight:800}
+.sub{font-size:13px;color:var(--t2);line-height:1.5}
+.nav{display:flex;gap:8px;overflow-x:auto;padding:8px;margin-bottom:18px;border-radius:18px;background:rgba(255,255,255,.6);border:1px solid var(--cb);box-shadow:0 8px 22px rgba(255,155,179,.10)}
+.nav a{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 13px;border-radius:12px;background:rgba(255,255,255,.78);border:1px solid var(--cb);color:var(--tx);text-decoration:none;font-weight:800;font-size:13px;white-space:nowrap}
+.nav a.active,.nav a:hover{color:var(--ac);border-color:var(--ac);background:var(--hv)}
+.ni{font-size:15px}
+.card{background:var(--cd);border:1px solid var(--cb);border-radius:16px;box-shadow:var(--cs);overflow:hidden;margin-bottom:16px}
+.hd{padding:16px 16px 10px;background:linear-gradient(180deg,var(--ch),transparent)}
+.bd{padding:16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:8px 10px;font-size:13px}
+.k{color:var(--t2)}.v{font-weight:700}.ok{color:var(--ok)}.warn{color:var(--wn)}.bad{color:var(--er)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px}
+input[type=text],select{width:100%;max-width:440px;padding:10px 12px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:12px;font-size:14px;font-family:inherit}
+input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px var(--ag)}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.sl{position:absolute;inset:0;background:var(--tg);border-radius:24px;transition:.3s}
+.sl:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--cd);border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.toggle input:checked+.sl{background:var(--ac)}
+.toggle input:checked+.sl:before{transform:translateX(20px)}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag)}
+.btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}
+.log{margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:44px;white-space:pre-wrap}
+.news-list{display:grid;gap:12px}
+.news-item{padding:12px 14px;border:1px solid var(--cb);border-radius:14px;background:rgba(255,255,255,.55)}
+.news-item .t{font-weight:800;line-height:1.45;margin-bottom:6px}
+.news-item .s{font-size:13px;line-height:1.5;color:var(--t2);white-space:pre-wrap}
+.news-item .m{margin-top:8px;font-size:12px;color:var(--t2);display:flex;gap:12px;flex-wrap:wrap}
+@media(max-width:720px){.grid{grid-template-columns:1fr}.kv{grid-template-columns:82px 1fr}.wrap{padding:16px 12px 28px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div>
+      <div class="title">热点资讯</div>
+      <div class="sub">只显示关键新闻信息，按条轮播，不放图片。</div>
+    </div>
+    <div class="sub" id="topTime">-</div>
+  </div>
+  <div class="nav">
+    <a href="/"><span class="ni">📤</span> 上传</a>
+    <a href="/gallery"><span class="ni">🔁</span> 轮播</a>
+    <a href="/news" class="active"><span class="ni">📰</span> 新闻</a>
+    <a href="/weather"><span class="ni">🌤</span> 天气</a>
+    <a href="/clock"><span class="ni">🕐</span> 时钟</a>
+    <a href="/calendar"><span class="ni">🗓</span> 日历</a>
+    <a href="/config"><span class="ni">⚙</span> 配置</a>
+  </div>
+
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">新闻配置</div>
+      <div class="sub">填一个你自己的 JSON 地址，设备会按间隔自动刷新。</div>
+    </div>
+    <div class="bd">
+      <div class="grid">
+        <div>
+          <div class="form-row">
+            <label>总开关</label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <span class="toggle"><input type="checkbox" id="nEnabled"><span class="sl"></span></span>
+              <span id="nLabel" style="font-size:13px">已关闭</span>
+            </label>
+          </div>
+          <div class="form-row"><label>新闻源 URL</label><input type="text" id="nUrl" placeholder="https://example.com/news.json"></div>
+          <div class="form-row"><label>刷新间隔</label>
+            <select id="nRefresh">
+              <option value="60">1 分钟</option><option value="300">5 分钟</option><option value="600">10 分钟</option>
+              <option value="1800">30 分钟</option><option value="3600">1 小时</option><option value="7200">2 小时</option>
+            </select>
+          </div>
+          <div class="row">
+            <button class="btn" onclick="saveNews()">保存设置</button>
+            <button class="btn ghost" onclick="refreshNews()">立即刷新</button>
+          </div>
+        </div>
+        <div>
+          <div class="kv">
+            <div class="k">状态</div><div class="v" id="nStatus">-</div>
+            <div class="k">来源标题</div><div class="v" id="nTitle">-</div>
+            <div class="k">更新时间</div><div class="v" id="nUpdated">-</div>
+            <div class="k">当前条目</div><div class="v" id="nIndex">-</div>
+          </div>
+        </div>
+      </div>
+      <div class="log" id="nLog">加载中…</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">当前新闻</div>
+      <div class="sub">屏幕上会一条一条轮流显示。</div>
+    </div>
+    <div class="bd">
+      <div class="news-list" id="newsList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function authHeaders(){try{var u=localStorage.getItem('epd_auth_u');var p=localStorage.getItem('epd_auth_p');if(u&&p)return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};}catch(e){}return {};}
+function fetchOpts(extra){extra=extra||{};return Object.assign({},extra,{headers:Object.assign({},authHeaders(),extra.headers||{})});}
+function logMsg(s,cls){var el=document.getElementById('nLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+function fmtSec(sec){sec=parseInt(sec||0);if(sec>=3600)return (sec/3600)+' 小时';if(sec>=60)return (sec/60)+' 分钟';return sec+' 秒';}
+function clearNode(el){while(el.firstChild) el.removeChild(el.firstChild);}
+function addItem(list,it,idx,total){
+  var d=document.createElement('div');d.className='news-item';
+  var t=document.createElement('div');t.className='t';t.textContent=it.title||'未命名新闻';
+  var s=document.createElement('div');s.className='s';s.textContent=it.summary||'暂无摘要';
+  var m=document.createElement('div');m.className='m';
+  var source=document.createElement('span');source.textContent='来源：'+(it.source||'未知');
+  var time=document.createElement('span');time.textContent=it.time?('时间：'+it.time):'';
+  var seq=document.createElement('span');seq.textContent='第 '+(idx+1)+' / '+total+' 条';
+  m.appendChild(source);if(it.time)m.appendChild(time);m.appendChild(seq);
+  d.appendChild(t);d.appendChild(s);d.appendChild(m);list.appendChild(d);
+}
+async function loadNews(){
+  try{
+    var r=await fetch('/news_config',fetchOpts());
+    var j=await r.json();
+    document.getElementById('nEnabled').checked=!!j.enabled;
+    document.getElementById('nLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('nUrl').value=j.source_url||'';
+    document.getElementById('nRefresh').value=String(j.refresh_sec||1800);
+    document.getElementById('nStatus').textContent=j.has_data?'运行中':'暂无数据';
+    document.getElementById('nStatus').className='v '+(j.has_data?'ok':'warn');
+    document.getElementById('nTitle').textContent=j.page_title||'热点资讯';
+    document.getElementById('nUpdated').textContent=j.updated_at||'-';
+    document.getElementById('nIndex').textContent=(j.has_data?((j.current_index||0)+1)+' / '+(j.item_count||0):'-');
+    var list=document.getElementById('newsList');
+    clearNode(list);
+    if(j.items&&j.items.length){for(var i=0;i<j.items.length;i++) addItem(list,j.items[i],i,j.items.length);}
+    else{
+      var empty=document.createElement('div');
+      empty.className='news-item';
+      empty.innerHTML='<div class="t">暂无新闻</div><div class="s">请先填写新闻源并保存。</div>';
+      list.appendChild(empty);
+    }
+    document.getElementById('topTime').textContent='已加载';
+    logMsg('新闻设置已加载。');
+  }catch(e){logMsg('加载失败: '+e,'bad');}
+}
+async function saveNews(){
+  var cfg={enabled:document.getElementById('nEnabled').checked,source_url:document.getElementById('nUrl').value.trim(),refresh_sec:parseInt(document.getElementById('nRefresh').value,10)};
+  if(cfg.enabled&&!cfg.source_url){logMsg('请先填写新闻源 URL','bad');return;}
+  logMsg('保存中…');
+  try{
+    var r=await fetch('/news_config',fetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
+    var j=await r.json();
+    if(j.ok){logMsg('设置已保存。','ok');await loadNews();}
+    else logMsg('保存失败: '+(j.msg||'unknown'),'bad');
+  }catch(e){logMsg('保存失败: '+e,'bad');}
+}
+async function refreshNews(){
+  logMsg('正在刷新并上屏…');
+  try{
+    var r=await fetch('/news_show',fetchOpts({method:'POST'}));
+    var j=await r.json();
+    if(j.ok){logMsg('新闻已刷新。','ok');setTimeout(loadNews,800);}
+    else logMsg('刷新失败','bad');
+  }catch(e){logMsg('刷新失败: '+e,'bad');}
+}
+document.getElementById('nEnabled').addEventListener('change',function(){document.getElementById('nLabel').textContent=this.checked?'已开启':'已关闭';});
+loadNews();
+</script>
+</body>
+</html>

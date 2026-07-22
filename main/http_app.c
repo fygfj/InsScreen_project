@@ -1,4 +1,4 @@
-#include "http_app.h"
+﻿#include "http_app.h"
 #include "http_internal.h"
 
 #include <errno.h>
@@ -49,6 +49,7 @@
 #include "sensor_local.h"
 #include "sd_card.h"
 #include "diag_log.h"
+#include "news_feed.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -68,7 +69,7 @@ const int         http_upload_max_bytes = 2 * 1024 * 1024;
 #define IMAGES_DIR http_images_dir
 #define UPLOAD_MAX_BYTES http_upload_max_bytes
 
-/* ── Basic Auth ───────────────────────────────────────────────────── */
+/* 鈹€鈹€ Basic Auth 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 #define AUTH_NVS_NS   "http_auth"
 #define AUTH_NVS_USER "user"
@@ -155,7 +156,7 @@ static esp_err_t auth_config_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", http_auth_is_enabled());
@@ -163,7 +164,7 @@ static esp_err_t auth_config_get_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -177,12 +178,12 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char buf[160] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "请求体为空"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -194,7 +195,7 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
     if (nerr != ESP_OK) {
         cJSON_Delete(root);
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 打开失败\"}");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 鎵撳紑澶辫触\"}");
         return ESP_OK;
     }
 
@@ -220,7 +221,7 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
 
     if (op != ESP_OK) {
         httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"凭据未保存\"}");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"auth save failed\"}");
         return ESP_OK;
     }
 
@@ -233,7 +234,7 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
 
 /* embedded HTML externs are in http_internal.h */
 
-/* ── helpers ───────────────────────────────────────────────────────── */
+/* 鈹€鈹€ helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 int http_stat_size_or_neg(const char *path)
 {
@@ -257,14 +258,14 @@ static void drain_request_body(httpd_req_t *req)
     }
 }
 
-/** EPD 未就绪时返回 JSON 503，避免 httpd 与 epd_init 并行时刷硬件 */
+/** EPD 鏈氨缁椂杩斿洖 JSON 503锛岄伩鍏?httpd 涓?epd_init 骞惰鏃跺埛纭欢 */
 bool http_require_epd_ready(httpd_req_t *req)
 {
     if (epd_is_ready())
         return true;
     httpd_resp_set_status(req, "503 Service Unavailable");
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"墨水屏正在初始化，请几秒后重试\"}");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"epd not ready\"}");
     return false;
 }
 
@@ -284,7 +285,7 @@ bool http_get_query_param(httpd_req_t *req, const char *key,
     return ok;
 }
 
-/* ── GET / ─────────────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET / 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t index_get_handler(httpd_req_t *req)
 {
@@ -329,7 +330,7 @@ static const char *http_panel_name(epd_panel_t panel)
     }
 }
 
-/* ── GET /status ───────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /status 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
@@ -463,7 +464,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
 /* gallery handlers moved to http_gallery.c */
 
-/* ── GET /config ───────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t config_get_handler(httpd_req_t *req)
 {
@@ -489,6 +490,11 @@ static esp_err_t weather_page_get_handler(httpd_req_t *req)
     return http_send_embedded_html(req, weather_html_start, weather_html_end);
 }
 
+static esp_err_t news_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, news_html_start, news_html_end);
+}
+
 static esp_err_t clock_page_get_handler(httpd_req_t *req)
 {
     return http_send_embedded_html(req, clock_html_start, clock_html_end);
@@ -511,7 +517,7 @@ static esp_err_t codex_page_get_handler(httpd_req_t *req)
 
 /* timetable/todo/countdown UI handlers moved to http_features.c */
 
-/* ── GET /wifi_status ──────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /wifi_status 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 {
@@ -519,7 +525,7 @@ static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
 
@@ -544,7 +550,7 @@ static esp_err_t wifi_status_get_handler(httpd_req_t *req)
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!json) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -553,7 +559,7 @@ static esp_err_t wifi_status_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /scan ─────────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /scan 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
@@ -564,7 +570,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     cJSON *arr  = cJSON_AddArrayToObject(root, "aps");
@@ -579,7 +585,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -588,25 +594,25 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /wifi_connect ────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /wifi_connect 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[256] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
     const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItem(root, "ssid"));
     const char *pass = cJSON_GetStringValue(cJSON_GetObjectItem(root, "password"));
     if (!ssid || ssid[0] == '\0') {
         cJSON_Delete(root);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 WiFi 名称");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缂哄皯 WiFi 鍚嶇О");
         return ESP_OK;
     }
 
@@ -632,7 +638,7 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(resp);
     cJSON_Delete(resp);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -641,13 +647,12 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /wifi_forget ─────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /wifi_forget 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t wifi_forget_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
-    /* 不直接修改 req->content_len（httpd_req_recv 内部会跟踪剩余字节）。
-     * 用本地 remain 计数器消耗请求体即可，避免依赖未文档化的内部行为。 */
+    /* 涓嶇洿鎺ヤ慨鏀?req->content_len锛坔ttpd_req_recv 鍐呴儴浼氳窡韪墿浣欏瓧鑺傦級銆?     * 鐢ㄦ湰鍦?remain 璁℃暟鍣ㄦ秷鑰楄姹備綋鍗冲彲锛岄伩鍏嶄緷璧栨湭鏂囨。鍖栫殑鍐呴儴琛屼负銆?*/
     char tmp[64];
     int remain = req->content_len;
     while (remain > 0) {
@@ -664,7 +669,7 @@ static esp_err_t wifi_forget_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /slideshow ────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /slideshow 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t slideshow_get_handler(httpd_req_t *req)
 {
@@ -690,18 +695,18 @@ static esp_err_t slideshow_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /slideshow ──────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /slideshow 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t slideshow_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -722,7 +727,7 @@ static esp_err_t slideshow_post_handler(httpd_req_t *req)
 
     esp_err_t err = scheduler_set_config(&cfg);
     if (err != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "配置无效");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "閰嶇疆鏃犳晥");
         return ESP_OK;
     }
 
@@ -731,7 +736,7 @@ static esp_err_t slideshow_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /version ──────────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /version 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t version_get_handler(httpd_req_t *req)
 {
@@ -755,7 +760,7 @@ static esp_err_t version_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /ota ─────────────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /ota 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static void reboot_task(void *arg)
 {
@@ -884,7 +889,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /weather_config ───────────────────────────────────────────── */
+/* 鈹€鈹€ GET /weather_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t weather_config_get_handler(httpd_req_t *req)
 {
@@ -897,11 +902,11 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
-    /* 不在 GET 中下发明文 Key，避免局域网嗅探；前端用 api_key_set + 留空保存保留原密钥 */
+    /* 涓嶅湪 GET 涓笅鍙戞槑鏂?Key锛岄伩鍏嶅眬鍩熺綉鍡呮帰锛涘墠绔敤 api_key_set + 鐣欑┖淇濆瓨淇濈暀鍘熷瘑閽?*/
     cJSON_AddStringToObject(root, "api_key", "");
     cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
     cJSON_AddStringToObject(root, "api_host", cfg.api_host);
@@ -917,7 +922,7 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -926,17 +931,17 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /weather_config ─────────────────────────────────────────── */
+/* 鈹€鈹€ POST /weather_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t weather_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[512] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
-    if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误"); return ESP_OK; }
+    if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒"); return ESP_OK; }
 
     weather_config_t cfg;
     weather_get_config(&cfg);
@@ -967,7 +972,7 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /weather_show ───────────────────────────────────────────── */
+/* 鈹€鈹€ POST /weather_show 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t weather_show_post_handler(httpd_req_t *req)
 {
@@ -992,7 +997,121 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── Codex quota config ───────────────────────────────────────────── */
+/* 鈹€鈹€ Codex quota config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+
+static esp_err_t news_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    news_feed_config_t cfg;
+    news_feed_data_t data;
+    news_feed_get_config(&cfg);
+    news_feed_get_data_copy(&data);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
+        return ESP_OK;
+    }
+    cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
+    cJSON_AddStringToObject(root, "source_url", cfg.source_url);
+    cJSON_AddNumberToObject(root, "refresh_sec", cfg.refresh_sec);
+    cJSON_AddBoolToObject(root, "has_data", data.valid);
+    cJSON_AddStringToObject(root, "page_title", data.page_title);
+    cJSON_AddStringToObject(root, "updated_at", data.updated_at);
+    cJSON_AddNumberToObject(root, "item_count", data.item_count);
+    cJSON_AddNumberToObject(root, "current_index", data.current_index);
+
+    cJSON *items = cJSON_AddArrayToObject(root, "items");
+    if (items && data.valid) {
+        for (int i = 0; i < data.item_count; i++) {
+            const news_feed_item_t *it = &data.items[i];
+            cJSON *o = cJSON_CreateObject();
+            if (!o) continue;
+            cJSON_AddStringToObject(o, "title", it->title);
+            cJSON_AddStringToObject(o, "summary", it->summary);
+            cJSON_AddStringToObject(o, "source", it->source);
+            cJSON_AddStringToObject(o, "time", it->time);
+            cJSON_AddItemToArray(items, o);
+        }
+    }
+
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, str, HTTPD_RESP_USE_STRLEN);
+    free(str);
+    return ESP_OK;
+}
+
+static esp_err_t news_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char buf[1024] = {0};
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
+        return ESP_OK;
+    }
+
+    news_feed_config_t cfg;
+    news_feed_get_config(&cfg);
+
+    cJSON *j = cJSON_GetObjectItem(root, "enabled");
+    if (j && cJSON_IsBool(j))
+        cfg.enabled = cJSON_IsTrue(j);
+
+    const char *s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "source_url"));
+    if (s)
+        snprintf(cfg.source_url, sizeof(cfg.source_url), "%s", s);
+
+    j = cJSON_GetObjectItem(root, "refresh_sec");
+    if (j && cJSON_IsNumber(j))
+        cfg.refresh_sec = (uint32_t)j->valuedouble;
+
+    cJSON_Delete(root);
+
+    esp_err_t err = news_feed_set_config(&cfg);
+    httpd_resp_set_type(req, "application/json");
+    if (err != ESP_OK) {
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"閰嶇疆鏃犳晥\"}");
+        return ESP_OK;
+    }
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
+static esp_err_t news_show_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    drain_request_body(req);
+
+    esp_err_t err = news_feed_refresh_and_show();
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_NEWS);
+        power_mgr_save_mode(DISPLAY_MODE_NEWS);
+        buzzer_beep_content_success();
+    } else {
+        buzzer_beep_display_error();
+    }
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
 
 static esp_err_t codex_quota_config_get_handler(httpd_req_t *req)
 {
@@ -1005,7 +1124,7 @@ static esp_err_t codex_quota_config_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
@@ -1028,7 +1147,7 @@ static esp_err_t codex_quota_config_get_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -1041,12 +1160,12 @@ static esp_err_t codex_quota_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[768] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -1100,7 +1219,7 @@ static esp_err_t codex_quota_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /clock_config ─────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /clock_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t clock_config_get_handler(httpd_req_t *req)
 {
@@ -1121,18 +1240,18 @@ static esp_err_t clock_config_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /clock_config ───────────────────────────────────────────── */
+/* 鈹€鈹€ POST /clock_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t clock_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -1154,7 +1273,7 @@ static esp_err_t clock_config_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /clock_show ─────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /clock_show 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t clock_show_post_handler(httpd_req_t *req)
 {
@@ -1180,7 +1299,7 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── GET /msg_config ───────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /msg_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t msg_config_get_handler(httpd_req_t *req)
 {
@@ -1199,7 +1318,7 @@ static esp_err_t msg_config_get_handler(httpd_req_t *req)
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 鍐呭瓨涓嶈冻");
         return ESP_OK;
     }
     httpd_resp_set_type(req, "application/json");
@@ -1208,22 +1327,22 @@ static esp_err_t msg_config_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /msg_config ─────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /msg_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t msg_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char *buf = malloc(MSG_MAX_LEN + 128);
     if (!buf) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存分配失败");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "鍐呭瓨鍒嗛厤澶辫触");
         return ESP_OK;
     }
     if (req->content_len <= 0 || req->content_len >= MSG_MAX_LEN + 128) {
         free(buf);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad request");
         return ESP_OK;
     }
-    if (!http_read_request_body(req, buf, MSG_MAX_LEN + 128, "请求体错误")) {
+    if (!http_read_request_body(req, buf, MSG_MAX_LEN + 128, "bad request")) {
         free(buf);
         return ESP_OK;
     }
@@ -1231,7 +1350,7 @@ static esp_err_t msg_config_post_handler(httpd_req_t *req)
     cJSON *root = cJSON_Parse(buf);
     free(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -1262,7 +1381,7 @@ static esp_err_t msg_config_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /msg_show ───────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /msg_show 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t msg_show_post_handler(httpd_req_t *req)
 {
@@ -1291,7 +1410,7 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /msg_image_show ───────────────────────────────────────────
+/* 鈹€鈹€ POST /msg_image_show 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
  * Receive a browser-rendered PNG/JPEG/BMP message image and display it without
  * adding it to the gallery. This keeps decorative/user fonts out of firmware
  * fontfs while preserving message-board semantics.
@@ -1382,7 +1501,7 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
 
 /* calendar_show moved to http_features.c */
 
-/* ── GET /panel_config ─────────────────────────────────────────────── */
+/* 鈹€鈹€ GET /panel_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t panel_config_get_handler(httpd_req_t *req)
 {
@@ -1409,18 +1528,18 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── POST /panel_config ────────────────────────────────────────────── */
+/* 鈹€鈹€ POST /panel_config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t panel_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[256] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -1464,7 +1583,7 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── favicon (suppress 404 spam) ──────────────────────────────────── */
+/* 鈹€鈹€ favicon (suppress 404 spam) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t favicon_get_handler(httpd_req_t *req)
 {
@@ -1473,7 +1592,7 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-/* ── power config handlers ─────────────────────────────────────────── */
+/* 鈹€鈹€ power config handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t power_config_get_handler(httpd_req_t *req)
 {
@@ -1496,11 +1615,11 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char body[256] = {0};
-    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+    if (!http_read_request_body(req, body, sizeof(body), "璇锋眰涓虹┖"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(body);
-    if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误"); return ESP_OK; }
+    if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒"); return ESP_OK; }
 
     power_config_t pc;
     power_mgr_get_config(&pc);
@@ -1590,12 +1709,12 @@ static esp_err_t buzzer_config_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char body[512] = {0};
-    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+    if (!http_read_request_body(req, body, sizeof(body), "璇锋眰涓虹┖"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(body);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -1632,7 +1751,7 @@ static esp_err_t buzzer_config_post_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     if (err != ESP_OK) {
         httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 保存失败\"}");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 淇濆瓨澶辫触\"}");
         return ESP_OK;
     }
     httpd_resp_sendstr(req, "{\"ok\":true}");
@@ -1649,7 +1768,7 @@ static esp_err_t buzzer_test_post_handler(httpd_req_t *req)
 
     if (req->content_len > 0) {
         char body[96] = {0};
-        if (!http_read_request_body(req, body, sizeof(body), "请求过长"))
+        if (!http_read_request_body(req, body, sizeof(body), "璇锋眰杩囬暱"))
             return ESP_OK;
         cJSON *root = cJSON_Parse(body);
         if (root) {
@@ -1664,7 +1783,7 @@ static esp_err_t buzzer_test_post_handler(httpd_req_t *req)
         esp_err_t init_err = buzzer_init();
         if (init_err != ESP_OK) {
             httpd_resp_set_type(req, "application/json");
-            httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"蜂鸣器未初始化\"}");
+            httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"buzzer not ready\"}");
             return ESP_OK;
         }
     }
@@ -1989,12 +2108,12 @@ static esp_err_t sensor_config_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char body[256] = {0};
-    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+    if (!http_read_request_body(req, body, sizeof(body), "璇锋眰涓虹┖"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(body);
     if (!root) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 鏍煎紡閿欒");
         return ESP_OK;
     }
 
@@ -2025,10 +2144,10 @@ static esp_err_t sensor_config_post_handler(httpd_req_t *req)
 
 /* countdown handlers moved to http_features.c */
 
-/* ── session open hook (reset inactivity timer) ───────────────────── */
+/* 鈹€鈹€ session open hook (reset inactivity timer) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 
-/* ── server start ──────────────────────────────────────────────────── */
+/* 鈹€鈹€ server start 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static esp_err_t epd_test_post_handler(httpd_req_t *req)
 {
@@ -2079,7 +2198,7 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     int y = (H >= 300) ? 12 : 6;
 
     fb_rect(fb, 0, 0, W, H, COLOR_BLACK);
-    ui_draw_text_px(fb, m, y, "字库预览", COLOR_BLACK,
+    ui_draw_text_px(fb, m, y, "瀛楀簱棰勮", COLOR_BLACK,
                     (W >= 360) ? 30 : 24);
     y += (W >= 360) ? 31 : 26;
 
@@ -2100,13 +2219,13 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     const int sample_w = W - sample_x - m;
 
     ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
-    fb_utf8_px_maxw(fb, sample_x, y, "日历 天气 待办", COLOR_BLACK, 24, sample_w);
+    fb_utf8_px_maxw(fb, sample_x, y, "鏃ュ巻 澶╂皵 寰呭姙", COLOR_BLACK, 24, sample_w);
     y += 28;
     ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "0123456789 23:59", COLOR_BLACK, 24, sample_w);
     y += 28;
     ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
-    fb_utf8_px_maxw(fb, sample_x, y, "℃ ￥ ± % / () !?", COLOR_BLACK, 24, sample_w);
+    fb_utf8_px_maxw(fb, sample_x, y, "鈩?锟?卤 % / () !?", COLOR_BLACK, 24, sample_w);
     y += 32;
 
     fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
@@ -2114,7 +2233,7 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     fb_utf8_px_maxw(fb, sample_x, y, "2026-06-21", COLOR_BLACK, 32, sample_w);
     y += 38;
     ui_draw_text_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
-    fb_utf8_px_maxw(fb, sample_x, y, "25℃ 88% ￥9.9", COLOR_BLACK, 32, sample_w);
+    fb_utf8_px_maxw(fb, sample_x, y, "25鈩?88% 锟?.9", COLOR_BLACK, 32, sample_w);
     y += 40;
 
     fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
@@ -2165,7 +2284,7 @@ static esp_err_t epd_repair_post_handler(httpd_req_t *req)
     int pattern = 0;
     if (req->content_len > 0) {
         char buf[128] = {0};
-        if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+            if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
             return ESP_OK;
         cJSON *root = cJSON_Parse(buf);
         if (root) {
@@ -2238,7 +2357,7 @@ static esp_err_t spiffs_format_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char buf[128] = {0};
-    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+        if (!http_read_request_body(req, buf, sizeof(buf), "request body too large"))
         return ESP_OK;
 
     cJSON *root = cJSON_Parse(buf);
@@ -2298,6 +2417,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/config",        HTTP_GET,  config_get_handler,         NULL },
         { "/gallery",       HTTP_GET,  gallery_page_get_handler,   NULL },
         { "/weather",       HTTP_GET,  weather_page_get_handler,   NULL },
+        { "/news",          HTTP_GET,  news_page_get_handler,      NULL },
         { "/clock",         HTTP_GET,  clock_page_get_handler,     NULL },
         { "/calendar",      HTTP_GET,  calendar_page_get_handler,  NULL },
         { "/message",       HTTP_GET,  message_page_get_handler,   NULL },
@@ -2329,6 +2449,9 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/weather_config", HTTP_GET,  weather_config_get_handler, NULL },
         { "/weather_config", HTTP_POST, weather_config_post_handler,NULL },
         { "/weather_show",   HTTP_POST, weather_show_post_handler,  NULL },
+        { "/news_config",    HTTP_GET,  news_config_get_handler,    NULL },
+        { "/news_config",    HTTP_POST, news_config_post_handler,   NULL },
+        { "/news_show",      HTTP_POST, news_show_post_handler,     NULL },
         { "/codex_quota_config", HTTP_GET,  codex_quota_config_get_handler, NULL },
         { "/codex_quota_config", HTTP_POST, codex_quota_config_post_handler,NULL },
         { "/codex_quota_show",   HTTP_POST, codex_quota_show_post_handler,  NULL },
@@ -2406,3 +2529,4 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
              registered, (int)(sizeof(uris) / sizeof(uris[0])));
     return ESP_OK;
 }
+

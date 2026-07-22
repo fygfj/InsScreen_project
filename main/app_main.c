@@ -32,6 +32,7 @@
 #include "buzzer.h"
 #include "sensor_local.h"
 #include "sd_card.h"
+#include "news_feed.h"
 #include "button.h"
 #include "fb_render.h"
 #include "font_ext.h"
@@ -437,6 +438,7 @@ static void register_display_modes(void)
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
     display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
+    display_mode_register(&(display_mode_entry_t){ "news",      "热点资讯", news_feed_show });
 }
 
 static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather)
@@ -451,6 +453,9 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
         break;
     case DISPLAY_MODE_CODEX_QUOTA:
         wifi_needed = app_codex_config_ready();
+        break;
+    case DISPLAY_MODE_NEWS:
+        wifi_needed = news_feed_config_ready();
         break;
     case DISPLAY_MODE_CLOCK: {
         clock_config_t cc;
@@ -519,6 +524,7 @@ static const char *mode_name_for_log(int mode)
     case DISPLAY_MODE_TODO: return "todo";
     case DISPLAY_MODE_COUNTDOWN: return "countdown";
     case DISPLAY_MODE_CODEX_QUOTA: return "codex";
+    case DISPLAY_MODE_NEWS: return "news";
     default: return "unknown";
     }
 }
@@ -566,6 +572,7 @@ static void quick_refresh_and_sleep(void)
     ESP_ERROR_CHECK(countdown_init());
     codex_quota_set_auto_network_allowed(false);
     ESP_ERROR_CHECK(codex_quota_init());
+    ESP_ERROR_CHECK(news_feed_init());
 
     register_display_modes();
 
@@ -744,6 +751,7 @@ static void full_boot(void)
         if (timetable_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: timetable unavailable");
         if (todo_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: todo unavailable");
         if (countdown_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: countdown unavailable");
+        if (news_feed_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: news unavailable");
         ESP_LOGW(TAG, "SPIFFS diagnostic mode: content display and sleep arming are disabled");
         ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
                  device_identity_get_mdns_hostname());
@@ -766,10 +774,11 @@ static void full_boot(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
+    ESP_ERROR_CHECK(news_feed_init());
     {
         bool write_mode_back = false;
         int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
-                                             DISPLAY_MODE_CODEX_QUOTA + 1,
+                                             DISPLAY_MODE_NEWS + 1,
                                              &write_mode_back);
         if (!full_boot_should_prefetch_weather(boot_mode)) {
             if (boot_mode == DISPLAY_MODE_WEATHER) {
