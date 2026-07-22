@@ -5,6 +5,8 @@
 #include "esp_err.h"
 
 #define NEWS_FEED_MAX_URL      512
+#define NEWS_FEED_API_KEY_LEN   65
+#define NEWS_FEED_CATEGORY_LEN  16
 #define NEWS_FEED_MAX_ITEMS    6
 #define NEWS_FEED_TITLE_LEN    128
 #define NEWS_FEED_SUMMARY_LEN  320
@@ -13,6 +15,16 @@
 
 typedef struct {
     bool     enabled;
+    /* 聚合数据平台申请到的 API Key。 */
+    char     api_key[NEWS_FEED_API_KEY_LEN];
+    /* 聚合新闻分类，例如 top、guonei、keji。 */
+    char     category[NEWS_FEED_CATEGORY_LEN];
+    /* 每次向接口请求的新闻数量，程序最多显示 NEWS_FEED_MAX_ITEMS 条。 */
+    uint8_t  page_size;
+    /*
+     * 实际请求地址。新配置会根据上面三个字段自动生成；保留这个字段是为了
+     * 兼容旧版本已经保存的完整 JSON URL。
+     */
     char     source_url[NEWS_FEED_MAX_URL];
     uint32_t refresh_sec;
 } news_feed_config_t;

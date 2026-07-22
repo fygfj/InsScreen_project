@@ -32,6 +32,8 @@ static const char *NVS_NS = "news";
 #define NEWS_MAX_REFRESH_SEC     86400
 #define NEWS_HTTP_TIMEOUT_MS     12000
 #define NEWS_HTTP_MAX_BYTES      12288
+#define NEWS_DEFAULT_PAGE_SIZE   NEWS_FEED_MAX_ITEMS
+#define NEWS_JUHE_ENDPOINT       "https://v.juhe.cn/toutiao/index"
 
 typedef struct {
     char *buf;
@@ -42,6 +44,9 @@ typedef struct {
 
 static news_feed_config_t s_cfg = {
     .enabled = false,
+    .api_key = "",
+    .category = "top",
+    .page_size = NEWS_DEFAULT_PAGE_SIZE,
     .source_url = "",
     .refresh_sec = NEWS_DEFAULT_REFRESH_SEC,
 };
@@ -59,6 +64,14 @@ static atomic_bool       s_pending;
 static atomic_uint       s_pending_epoch;
 static atomic_int        s_pending_flags;
 static int64_t           s_last_fetch_us;
+
+static void normalize_source_url(char *url, size_t url_len);
+static bool news_api_key_valid(const char *key);
+static bool news_category_valid(const char *category);
+static bool news_url_query_value(const char *url, const char *name,
+                                 char *out, size_t out_len);
+static esp_err_t news_prepare_config(news_feed_config_t *cfg);
+static int news_items_per_page(int width, int height);
 
 enum {
     NEWS_RENDER_ADVANCE     = 1 << 0,
@@ -84,11 +97,40 @@ static void nvs_load(void)
     size_t len = sizeof(s_cfg.source_url);
     nvs_get_str(h, "url", s_cfg.source_url, &len);
 
+    len = sizeof(s_cfg.api_key);
+    nvs_get_str(h, "key", s_cfg.api_key, &len);
+
+    len = sizeof(s_cfg.category);
+    nvs_get_str(h, "category", s_cfg.category, &len);
+
+    uint8_t page_size = 0;
+    if (nvs_get_u8(h, "page_size", &page_size) == ESP_OK)
+        s_cfg.page_size = page_size;
+
     uint32_t refresh = 0;
     if (nvs_get_u32(h, "refresh", &refresh) == ESP_OK)
         s_cfg.refresh_sec = clamp_refresh_sec(refresh);
 
     nvs_close(h);
+
+    /*
+     * 兼容旧版：以前网页只保存一条完整 URL。如果 URL 是聚合新闻接口，
+     * 第一次启动新固件时自动提取 key、type 和 page_size，用户不用重填。
+     */
+    if (!s_cfg.api_key[0] && s_cfg.source_url[0]) {
+        char value[NEWS_FEED_API_KEY_LEN];
+        if (news_url_query_value(s_cfg.source_url, "key", value, sizeof(value)))
+            snprintf(s_cfg.api_key, sizeof(s_cfg.api_key), "%s", value);
+        (void)news_url_query_value(s_cfg.source_url, "type",
+                                   s_cfg.category, sizeof(s_cfg.category));
+        if (news_url_query_value(s_cfg.source_url, "page_size", value, sizeof(value))) {
+            unsigned long n = strtoul(value, NULL, 10);
+            if (n > 0 && n <= NEWS_FEED_MAX_ITEMS)
+                s_cfg.page_size = (uint8_t)n;
+        }
+    }
+
+    (void)news_prepare_config(&s_cfg);
 }
 
 static void nvs_save(void)
@@ -96,6 +138,9 @@ static void nvs_save(void)
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_u8(h, "enabled", s_cfg.enabled ? 1 : 0);
+    nvs_set_str(h, "key", s_cfg.api_key);
+    nvs_set_str(h, "category", s_cfg.category);
+    nvs_set_u8(h, "page_size", s_cfg.page_size);
     nvs_set_str(h, "url", s_cfg.source_url);
     nvs_set_u32(h, "refresh", s_cfg.refresh_sec);
     nvs_commit(h);
@@ -158,6 +203,105 @@ static void normalize_source_url(char *url, size_t url_len)
     char tmp[NEWS_FEED_MAX_URL];
     snprintf(tmp, sizeof(tmp), "https://%s", url);
     snprintf(url, url_len, "%s", tmp);
+}
+
+static bool news_api_key_valid(const char *key)
+{
+    if (!key || !key[0])
+        return false;
+
+    /*
+     * 聚合数据的 Key 通常是数字和英文字母。额外允许 '-'、'_'，但不允许
+     * '&'、'?' 等字符进入查询串，避免用户误粘贴整条 URL。
+     */
+    size_t len = 0;
+    for (const unsigned char *p = (const unsigned char *)key; *p; p++, len++) {
+        bool ok = (*p >= '0' && *p <= '9') ||
+                  (*p >= 'a' && *p <= 'z') ||
+                  (*p >= 'A' && *p <= 'Z') || *p == '-' || *p == '_';
+        if (!ok || len + 1 >= NEWS_FEED_API_KEY_LEN)
+            return false;
+    }
+    return len >= 8;
+}
+
+static bool news_category_valid(const char *category)
+{
+    static const char *const allowed[] = {
+        "top", "guonei", "guoji", "yule", "tiyu", "junshi",
+        "keji", "caijing", "youxi", "qiche", "jiankang",
+    };
+    if (!category || !category[0])
+        return false;
+    for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
+        if (strcmp(category, allowed[i]) == 0)
+            return true;
+    }
+    return false;
+}
+
+static bool news_url_query_value(const char *url, const char *name,
+                                 char *out, size_t out_len)
+{
+    if (!url || !name || !name[0] || !out || out_len == 0)
+        return false;
+
+    const char *p = strchr(url, '?');
+    if (!p)
+        return false;
+    p++;
+
+    size_t name_len = strlen(name);
+    while (*p) {
+        const char *end = strchr(p, '&');
+        if (!end)
+            end = p + strlen(p);
+        const char *eq = memchr(p, '=', (size_t)(end - p));
+        if (eq && (size_t)(eq - p) == name_len &&
+            strncmp(p, name, name_len) == 0) {
+            size_t value_len = (size_t)(end - eq - 1);
+            if (value_len == 0 || value_len >= out_len)
+                return false;
+            memcpy(out, eq + 1, value_len);
+            out[value_len] = '\0';
+            return true;
+        }
+        p = *end ? end + 1 : end;
+    }
+    return false;
+}
+
+static esp_err_t news_prepare_config(news_feed_config_t *cfg)
+{
+    if (!cfg)
+        return ESP_ERR_INVALID_ARG;
+
+    cfg->api_key[sizeof(cfg->api_key) - 1] = '\0';
+    cfg->category[sizeof(cfg->category) - 1] = '\0';
+    cfg->source_url[sizeof(cfg->source_url) - 1] = '\0';
+
+    if (!news_category_valid(cfg->category))
+        snprintf(cfg->category, sizeof(cfg->category), "top");
+    if (cfg->page_size < 1 || cfg->page_size > NEWS_FEED_MAX_ITEMS)
+        cfg->page_size = NEWS_DEFAULT_PAGE_SIZE;
+
+    if (cfg->api_key[0]) {
+        if (!news_api_key_valid(cfg->api_key))
+            return ESP_ERR_INVALID_ARG;
+
+        int n = snprintf(cfg->source_url, sizeof(cfg->source_url),
+                         NEWS_JUHE_ENDPOINT
+                         "?key=%s&type=%s&page=1&page_size=%u&is_filter=1",
+                         cfg->api_key, cfg->category,
+                         (unsigned)cfg->page_size);
+        if (n < 0 || n >= (int)sizeof(cfg->source_url))
+            return ESP_ERR_INVALID_SIZE;
+        return ESP_OK;
+    }
+
+    /* 没有新字段时保留旧版自定义 JSON URL 的兼容能力。 */
+    normalize_source_url(cfg->source_url, sizeof(cfg->source_url));
+    return cfg->source_url[0] ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 static char *news_http_get(const char *url)
@@ -507,14 +651,6 @@ static void render_current(unsigned epoch)
                    right[0] ? right : "", true);
 
     const int s = ui_scale_for(fb);
-    const int x = 26 * s;
-    const int max_w = fb->width - 52 * s;
-    const int title_px = ui_layout_is_wide(fb) ? 32 : 24;
-    const int body_px = ui_layout_is_wide(fb) ? 24 : 16;
-    const int title_line_h = title_px + 8;
-    const int body_line_h = body_px + 6;
-    const int title_y = ui_layout_is_42(fb) ? 58 : 54 * s;
-    const int summary_y = title_y + title_line_h * 2 + 18 * s;
 
     if (!cfg.enabled) {
         ui_draw_empty_state(fb, "新闻未开启", "请在网页端开启新闻功能");
@@ -524,18 +660,58 @@ static void render_current(unsigned epoch)
         int idx = data.current_index;
         if (idx < 0 || idx >= data.item_count)
             idx = 0;
-        news_feed_item_t *it = &data.items[idx];
 
-        draw_wrapped(fb, x, title_y, max_w, it->title, title_px, title_line_h, 2, COLOR_BLACK);
-        draw_wrapped(fb, x, summary_y, max_w,
-                     it->summary[0] ? it->summary : "暂无摘要",
-                     body_px, body_line_h, 6, COLOR_BLACK);
+        const bool is_42 = ui_layout_is_42(fb);
+        const bool wide = ui_layout_is_wide(fb);
+        const int per_page = news_items_per_page(fb->width, fb->height);
+        const int end = (idx + per_page < data.item_count)
+                            ? idx + per_page : data.item_count;
+        const int shown = end - idx;
+        const int content_top = is_42 ? 38 : 30 * s;
+        const int content_bottom = is_42 ? fb->height - 42
+                                         : fb->height - 28 * s;
+        const int row_h = (content_bottom - content_top) / shown;
+        const int accent_x = is_42 ? 16 : 12 * s;
+        const int text_x = is_42 ? 30 : 22 * s;
+        const int max_w = fb->width - text_x - (is_42 ? 14 : 12 * s);
+        const int title_px = is_42 ? 18 : (wide ? 26 : 14);
+        const int title_line_h = title_px + (wide ? 7 : 4);
+        const int meta_px = is_42 ? 14 : (wide ? 18 : 12);
 
-        char left[80];
-        snprintf(left, sizeof(left), "来源：%s", it->source[0] ? it->source : "未知");
-        char page[32];
-        snprintf(page, sizeof(page), "第 %d / %d 条资讯", idx + 1, data.item_count);
-        ui_draw_footer(fb, left, page);
+        for (int i = 0; i < shown; i++) {
+            const int item_index = idx + i;
+            const int row_y = content_top + i * row_h;
+            const news_feed_item_t *it = &data.items[item_index];
+
+            /* 红色短竖线代替大图标，既区分条目，又减少墨水屏红色刷新面积。 */
+            fb_fill_rect(fb, accent_x, row_y + 5, is_42 ? 3 : 2 * s,
+                         row_h > 18 ? row_h - 14 : 4, COLOR_RED);
+            draw_wrapped(fb, text_x, row_y + 2, max_w, it->title,
+                         title_px, title_line_h, 2, COLOR_BLACK);
+
+            const char *short_time = it->time;
+            if (short_time[0] && strlen(short_time) >= 16)
+                short_time += 5; /* 2026-07-22 21:12:00 -> 07-22 21:12:00 */
+            char meta[112];
+            snprintf(meta, sizeof(meta), "%d  %s · %.11s",
+                     item_index + 1,
+                     it->source[0] ? it->source : "未知来源",
+                     short_time[0] ? short_time : "时间未知");
+            int meta_y = row_y + 2 * title_line_h + (wide ? 7 : 2);
+            ui_draw_text_px_maxw(fb, text_x, meta_y, meta,
+                                 COLOR_BLACK, meta_px, max_w);
+
+            if (i + 1 < shown) {
+                int line_y = row_y + row_h - (wide ? 5 : 3);
+                ui_draw_dotted_hline(fb, text_x, line_y, max_w,
+                                     COLOR_BLACK, wide ? 10 : 7);
+            }
+        }
+
+        char page[40];
+        snprintf(page, sizeof(page), "第 %d-%d / %d 条",
+                 idx + 1, end, data.item_count);
+        ui_draw_footer(fb, "聚合新闻 · 自动更新", page);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -596,6 +772,16 @@ esp_err_t news_feed_fetch_now(void)
     }
 
     portENTER_CRITICAL(&s_mux);
+    /*
+     * 获取到新内容后保留当前页。否则每次联网都会把索引重置为 0，
+     * 自动轮播将永远只能看到第一页。
+     */
+    int per_page = news_items_per_page(epd_width(), epd_height());
+    int old_page = s_data.current_index / per_page;
+    int page_count = (parsed.item_count + per_page - 1) / per_page;
+    if (old_page >= page_count)
+        old_page = 0;
+    parsed.current_index = old_page * per_page;
     s_data = parsed;
     s_last_fetch_us = esp_timer_get_time();
     portEXIT_CRITICAL(&s_mux);
@@ -623,11 +809,28 @@ static bool data_needs_fetch(const news_feed_config_t *cfg)
     return age_us > (int64_t)cfg->refresh_sec * 1000000LL;
 }
 
+static int news_items_per_page(int width, int height)
+{
+    /*
+     * 400x300 及更大的常用墨水屏每页放 3 条；窄长小屏放 2 条；
+     * 200x200 一类的小屏只放 1 条，保证标题仍然看得清。
+     */
+    if (width >= 400 && height >= 272)
+        return 3;
+    if (height >= 260)
+        return 2;
+    return 1;
+}
+
 static void advance_index(void)
 {
     portENTER_CRITICAL(&s_mux);
-    if (s_data.valid && s_data.item_count > 0)
-        s_data.current_index = (s_data.current_index + 1) % s_data.item_count;
+    if (s_data.valid && s_data.item_count > 0) {
+        int per_page = news_items_per_page(epd_width(), epd_height());
+        int page_count = (s_data.item_count + per_page - 1) / per_page;
+        int page = s_data.current_index / per_page;
+        s_data.current_index = ((page + 1) % page_count) * per_page;
+    }
     portEXIT_CRITICAL(&s_mux);
 }
 
@@ -750,9 +953,11 @@ esp_err_t news_feed_init(void)
     if (ret != pdPASS)
         return ESP_ERR_NO_MEM;
 
-    ESP_LOGI(TAG, "News init: enabled=%d refresh=%lus url_len=%d",
+    ESP_LOGI(TAG,
+             "News init: enabled=%d refresh=%lus category=%s count=%u provider=%s",
              s_cfg.enabled ? 1 : 0, (unsigned long)s_cfg.refresh_sec,
-             (int)strlen(s_cfg.source_url));
+             s_cfg.category, (unsigned)s_cfg.page_size,
+             s_cfg.api_key[0] ? "juhe" : "legacy_url");
     return ESP_OK;
 }
 
@@ -771,10 +976,11 @@ esp_err_t news_feed_set_config(const news_feed_config_t *cfg)
 
     news_feed_config_t next = *cfg;
     next.refresh_sec = clamp_refresh_sec(next.refresh_sec);
-    next.source_url[sizeof(next.source_url) - 1] = '\0';
-    normalize_source_url(next.source_url, sizeof(next.source_url));
-    if (next.enabled && next.source_url[0] == '\0')
-        return ESP_ERR_INVALID_ARG;
+    esp_err_t prep_err = news_prepare_config(&next);
+    if (prep_err != ESP_OK &&
+        (next.enabled || prep_err != ESP_ERR_INVALID_STATE)) {
+        return prep_err;
+    }
 
     portENTER_CRITICAL(&s_mux);
     s_cfg = next;

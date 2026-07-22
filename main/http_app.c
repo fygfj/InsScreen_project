@@ -1014,7 +1014,25 @@ static esp_err_t news_config_get_handler(httpd_req_t *req)
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
-    cJSON_AddStringToObject(root, "source_url", cfg.source_url);
+    cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
+    /* 不把完整 Key 发回浏览器；网页留空保存时会保留 NVS 中的原值。 */
+    cJSON_AddStringToObject(root, "api_key", "");
+    char masked_key[24] = "";
+    size_t key_len = strlen(cfg.api_key);
+    if (key_len >= 8) {
+        snprintf(masked_key, sizeof(masked_key), "%.4s****%.4s",
+                 cfg.api_key, cfg.api_key + key_len - 4);
+    } else if (key_len > 0) {
+        snprintf(masked_key, sizeof(masked_key), "****");
+    }
+    cJSON_AddStringToObject(root, "api_key_masked", masked_key);
+    cJSON_AddStringToObject(root, "category", cfg.category);
+    cJSON_AddNumberToObject(root, "page_size", cfg.page_size);
+    cJSON_AddStringToObject(root, "provider",
+                            cfg.api_key[0] ? "juhe" : "legacy_url");
+    /* 只有旧版自定义源才返回 URL；聚合URL包含Key，不能回显。 */
+    cJSON_AddStringToObject(root, "source_url",
+                            cfg.api_key[0] ? "" : cfg.source_url);
     cJSON_AddNumberToObject(root, "refresh_sec", cfg.refresh_sec);
     cJSON_AddBoolToObject(root, "has_data", data.valid);
     cJSON_AddStringToObject(root, "page_title", data.page_title);
@@ -1069,8 +1087,27 @@ static esp_err_t news_config_post_handler(httpd_req_t *req)
     if (j && cJSON_IsBool(j))
         cfg.enabled = cJSON_IsTrue(j);
 
+    const char *api_key = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_key"));
+    if (api_key && api_key[0])
+        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", api_key);
+
+    j = cJSON_GetObjectItem(root, "clear_api_key");
+    if (j && cJSON_IsTrue(j)) {
+        cfg.api_key[0] = '\0';
+        cfg.source_url[0] = '\0';
+    }
+
+    const char *category =
+        cJSON_GetStringValue(cJSON_GetObjectItem(root, "category"));
+    if (category && category[0])
+        snprintf(cfg.category, sizeof(cfg.category), "%s", category);
+
+    j = cJSON_GetObjectItem(root, "page_size");
+    if (j && cJSON_IsNumber(j))
+        cfg.page_size = (uint8_t)j->valueint;
+
     const char *s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "source_url"));
-    if (s)
+    if (s && s[0] && (!api_key || !api_key[0]))
         snprintf(cfg.source_url, sizeof(cfg.source_url), "%s", s);
 
     j = cJSON_GetObjectItem(root, "refresh_sec");

@@ -40,7 +40,11 @@ static inline char *json_escape(char *dst, size_t dst_len, const char *src)
     return dst;
 }
 
-#define HTTP_HTML_CACHE_CONTROL "private, max-age=300"
+/*
+ * HTML 页面直接嵌入固件。固件升级后页面内容可能变化，因此禁止浏览器继续
+ * 使用旧页面缓存；图片等大资源仍可在各自处理器中单独设置长期缓存。
+ */
+#define HTTP_HTML_CACHE_CONTROL "no-cache, no-store, must-revalidate"
 
 /** Mark a real user-facing HTTP action. Silent polling endpoints should not
  * reset the low-power inactivity timer.
