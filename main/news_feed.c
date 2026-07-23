@@ -70,6 +70,7 @@ static bool news_api_key_valid(const char *key);
 static bool news_category_valid(const char *category);
 static bool news_url_query_value(const char *url, const char *name,
                                  char *out, size_t out_len);
+static void news_import_url_fields(news_feed_config_t *cfg);
 static esp_err_t news_prepare_config(news_feed_config_t *cfg);
 static int news_items_per_page(int width, int height);
 
@@ -117,18 +118,8 @@ static void nvs_load(void)
      * 兼容旧版：以前网页只保存一条完整 URL。如果 URL 是聚合新闻接口，
      * 第一次启动新固件时自动提取 key、type 和 page_size，用户不用重填。
      */
-    if (!s_cfg.api_key[0] && s_cfg.source_url[0]) {
-        char value[NEWS_FEED_API_KEY_LEN];
-        if (news_url_query_value(s_cfg.source_url, "key", value, sizeof(value)))
-            snprintf(s_cfg.api_key, sizeof(s_cfg.api_key), "%s", value);
-        (void)news_url_query_value(s_cfg.source_url, "type",
-                                   s_cfg.category, sizeof(s_cfg.category));
-        if (news_url_query_value(s_cfg.source_url, "page_size", value, sizeof(value))) {
-            unsigned long n = strtoul(value, NULL, 10);
-            if (n > 0 && n <= NEWS_FEED_MAX_ITEMS)
-                s_cfg.page_size = (uint8_t)n;
-        }
-    }
+    if (s_cfg.source_url[0])
+        news_import_url_fields(&s_cfg);
 
     (void)news_prepare_config(&s_cfg);
 }
@@ -271,6 +262,33 @@ static bool news_url_query_value(const char *url, const char *name,
     return false;
 }
 
+static void news_import_url_fields(news_feed_config_t *cfg)
+{
+    if (!cfg || !cfg->source_url[0])
+        return;
+
+    normalize_source_url(cfg->source_url, sizeof(cfg->source_url));
+
+    char value[NEWS_FEED_API_KEY_LEN];
+    if (!cfg->api_key[0] &&
+        news_url_query_value(cfg->source_url, "key", value, sizeof(value)) &&
+        news_api_key_valid(value)) {
+        snprintf(cfg->api_key, sizeof(cfg->api_key), "%s", value);
+    }
+
+    char category[NEWS_FEED_CATEGORY_LEN];
+    if (news_url_query_value(cfg->source_url, "type", category, sizeof(category)) &&
+        news_category_valid(category)) {
+        snprintf(cfg->category, sizeof(cfg->category), "%s", category);
+    }
+
+    if (news_url_query_value(cfg->source_url, "page_size", value, sizeof(value))) {
+        unsigned long n = strtoul(value, NULL, 10);
+        if (n > 0 && n <= NEWS_FEED_MAX_ITEMS)
+            cfg->page_size = (uint8_t)n;
+    }
+}
+
 static esp_err_t news_prepare_config(news_feed_config_t *cfg)
 {
     if (!cfg)
@@ -286,6 +304,12 @@ static esp_err_t news_prepare_config(news_feed_config_t *cfg)
         cfg->page_size = NEWS_DEFAULT_PAGE_SIZE;
 
     if (cfg->api_key[0]) {
+        if (url_looks_http(cfg->api_key)) {
+            snprintf(cfg->source_url, sizeof(cfg->source_url), "%s", cfg->api_key);
+            cfg->api_key[0] = '\0';
+            news_import_url_fields(cfg);
+        }
+
         if (!news_api_key_valid(cfg->api_key))
             return ESP_ERR_INVALID_ARG;
 
@@ -748,6 +772,7 @@ esp_err_t news_feed_fetch_now(void)
         return ESP_ERR_TIMEOUT;
 
     news_feed_config_t cfg;
+    int per_page = news_items_per_page(epd_width(), epd_height());
     portENTER_CRITICAL(&s_mux);
     cfg = s_cfg;
     portEXIT_CRITICAL(&s_mux);
@@ -776,7 +801,6 @@ esp_err_t news_feed_fetch_now(void)
      * 获取到新内容后保留当前页。否则每次联网都会把索引重置为 0，
      * 自动轮播将永远只能看到第一页。
      */
-    int per_page = news_items_per_page(epd_width(), epd_height());
     int old_page = s_data.current_index / per_page;
     int page_count = (parsed.item_count + per_page - 1) / per_page;
     if (old_page >= page_count)
@@ -796,14 +820,16 @@ static bool data_needs_fetch(const news_feed_config_t *cfg)
     if (!cfg || !cfg->enabled || !url_looks_http(cfg->source_url))
         return false;
 
-    news_feed_data_t data;
+    bool valid;
+    int item_count;
     int64_t last;
     portENTER_CRITICAL(&s_mux);
-    data = s_data;
+    valid = s_data.valid;
+    item_count = s_data.item_count;
     last = s_last_fetch_us;
     portEXIT_CRITICAL(&s_mux);
 
-    if (!data.valid || data.item_count <= 0)
+    if (!valid || item_count <= 0)
         return true;
     int64_t age_us = esp_timer_get_time() - last;
     return age_us > (int64_t)cfg->refresh_sec * 1000000LL;
@@ -881,7 +907,7 @@ static esp_err_t queue_render(int flags, unsigned *out_epoch)
     }
 
     atomic_store(&s_pending_flags, flags);
-    BaseType_t ret = xTaskCreate(render_task, "news_render", 10240,
+    BaseType_t ret = xTaskCreate(render_task, "news_render", 24576,
                                  (void *)(uintptr_t)epoch, 5, NULL);
     if (ret != pdPASS) {
         xSemaphoreGive(s_render_mutex);
@@ -928,11 +954,14 @@ static void news_task(void *arg)
         portEXIT_CRITICAL(&s_mux);
         if (!cfg.enabled)
             continue;
+        if (display_policy_boot_display_active())
+            continue;
 
         if (data_needs_fetch(&cfg))
             (void)news_feed_fetch_now();
 
-        if (display_mode_active() == DISPLAY_MODE_NEWS)
+        if (!display_policy_boot_display_active() &&
+            display_mode_active() == DISPLAY_MODE_NEWS)
             (void)news_feed_show_next();
     }
 }
@@ -945,13 +974,27 @@ esp_err_t news_feed_init(void)
     s_render_mutex = xSemaphoreCreateBinary();
     s_fetch_mutex = xSemaphoreCreateMutex();
     s_task_wakeup = xSemaphoreCreateBinary();
-    if (!s_render_mutex || !s_fetch_mutex || !s_task_wakeup)
+    if (!s_render_mutex || !s_fetch_mutex || !s_task_wakeup) {
+        if (s_render_mutex) vSemaphoreDelete(s_render_mutex);
+        if (s_fetch_mutex) vSemaphoreDelete(s_fetch_mutex);
+        if (s_task_wakeup) vSemaphoreDelete(s_task_wakeup);
+        s_render_mutex = NULL;
+        s_fetch_mutex = NULL;
+        s_task_wakeup = NULL;
         return ESP_ERR_NO_MEM;
+    }
     xSemaphoreGive(s_render_mutex);
 
     BaseType_t ret = xTaskCreate(news_task, "news_task", 6144, NULL, 3, NULL);
-    if (ret != pdPASS)
+    if (ret != pdPASS) {
+        vSemaphoreDelete(s_render_mutex);
+        vSemaphoreDelete(s_fetch_mutex);
+        vSemaphoreDelete(s_task_wakeup);
+        s_render_mutex = NULL;
+        s_fetch_mutex = NULL;
+        s_task_wakeup = NULL;
         return ESP_ERR_NO_MEM;
+    }
 
     ESP_LOGI(TAG,
              "News init: enabled=%d refresh=%lus category=%s count=%u provider=%s",
@@ -990,6 +1033,10 @@ esp_err_t news_feed_set_config(const news_feed_config_t *cfg)
     }
     portEXIT_CRITICAL(&s_mux);
     nvs_save();
+    ESP_LOGI(TAG, "config saved enabled=%d key_set=%d url_len=%u refresh=%lus",
+             next.enabled ? 1 : 0, next.api_key[0] ? 1 : 0,
+             (unsigned)strlen(next.source_url),
+             (unsigned long)next.refresh_sec);
 
     if (s_task_wakeup)
         xSemaphoreGive(s_task_wakeup);

@@ -1143,8 +1143,10 @@ static esp_err_t news_show_post_handler(httpd_req_t *req)
         buzzer_beep_display_error();
     }
 
-    char json[96];
-    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    char json[128];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"err\":\"%s\"}",
+             err == ESP_OK ? "true" : "false",
+             err == ESP_OK ? "" : esp_err_to_name(err));
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;

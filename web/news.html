@@ -38,6 +38,7 @@ input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3p
 .toggle input:checked+.sl:before{transform:translateX(20px)}
 .btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag)}
 .btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}
+.btn:disabled{opacity:.58;cursor:not-allowed;box-shadow:none}
 .log{margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:44px;white-space:pre-wrap}
 .news-list{display:grid;gap:12px}
 .news-item{padding:12px 14px;border:1px solid var(--cb);border-radius:14px;background:rgba(255,255,255,.55)}
@@ -81,7 +82,7 @@ input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3p
               <span id="nLabel" style="font-size:13px">已关闭</span>
             </label>
           </div>
-          <div class="form-row"><label>API Key</label><input type="password" id="nApiKey" maxlength="64" autocomplete="off" placeholder="请输入聚合数据 API Key"></div>
+          <div class="form-row"><label>API Key <a href="https://www.juhe.cn/apiexplorer/235" target="_blank" rel="noopener noreferrer" style="color:var(--ac);font-weight:700;text-decoration:none">去获取</a></label><input type="password" id="nApiKey" maxlength="64" autocomplete="off" placeholder="请输入聚合数据 API Key"></div>
           <div class="form-row"><label>新闻分类</label>
             <select id="nCategory">
               <option value="top">推荐</option><option value="guonei">国内</option><option value="guoji">国际</option>
@@ -104,7 +105,7 @@ input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3p
           </div>
           <div class="row">
             <button class="btn" onclick="saveNews()">保存设置</button>
-            <button class="btn ghost" onclick="refreshNews()">立即刷新</button>
+            <button class="btn ghost" id="nRefreshBtn" onclick="refreshNews()">立即刷新</button>
           </div>
         </div>
         <div>
@@ -137,6 +138,28 @@ input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3p
 function authHeaders(){try{var u=localStorage.getItem('epd_auth_u');var p=localStorage.getItem('epd_auth_p');if(u&&p)return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};}catch(e){}return {};}
 function fetchOpts(extra){extra=extra||{};return Object.assign({},extra,{headers:Object.assign({},authHeaders(),extra.headers||{})});}
 function logMsg(s,cls){var el=document.getElementById('nLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+function newsKeyCacheKey(){return 'epd_news_api_key';}
+function loadCachedNewsKey(){try{return localStorage.getItem(newsKeyCacheKey())||'';}catch(e){return '';}}
+function saveCachedNewsKey(key){try{if(key)localStorage.setItem(newsKeyCacheKey(),key);}catch(e){}}
+var newsRefreshTimer=null;
+function setNewsRefreshCooldown(sec){
+  var btn=document.getElementById('nRefreshBtn');
+  if(!btn)return;
+  if(newsRefreshTimer){clearInterval(newsRefreshTimer);newsRefreshTimer=null;}
+  var left=sec;
+  btn.disabled=true;
+  function tick(){
+    if(left<=0){btn.disabled=false;btn.textContent='立即刷新';clearInterval(newsRefreshTimer);newsRefreshTimer=null;return;}
+    btn.textContent='刷新中 '+left+'s';
+    left--;
+  }
+  tick();
+  newsRefreshTimer=setInterval(tick,1000);
+}
+function newsEpdBusy(err){
+  err=String(err||'').toLowerCase();
+  return err.indexOf('epd')>=0||err.indexOf('ready')>=0||err.indexOf('invalid_state')>=0||err.indexOf('timeout')>=0;
+}
 function fmtSec(sec){sec=parseInt(sec||0);if(sec>=3600)return (sec/3600)+' 小时';if(sec>=60)return (sec/60)+' 分钟';return sec+' 秒';}
 function categoryName(v){var m={top:'推荐',guonei:'国内',guoji:'国际',yule:'娱乐',tiyu:'体育',junshi:'军事',keji:'科技',caijing:'财经',youxi:'游戏',qiche:'汽车',jiankang:'健康'};return m[v]||v||'推荐';}
 function clearNode(el){while(el.firstChild) el.removeChild(el.firstChild);}
@@ -158,15 +181,16 @@ async function loadNews(){
     document.getElementById('nEnabled').checked=!!j.enabled;
     document.getElementById('nLabel').textContent=j.enabled?'已开启':'已关闭';
     var keyInput=document.getElementById('nApiKey');
-    keyInput.value='';
+    var cachedKey=loadCachedNewsKey();
+    keyInput.value=cachedKey;
     keyInput.dataset.keySet=j.api_key_set?'1':'0';
-    keyInput.placeholder=j.api_key_set?('已保存 '+(j.api_key_masked||'****')+'，留空不修改'):'请输入聚合数据 API Key';
+    keyInput.placeholder=j.api_key_set?('设备已保存 '+(j.api_key_masked||'****')+'，留空不修改'):'请输入聚合数据 API Key';
     document.getElementById('nCategory').value=j.category||'top';
     document.getElementById('nPageSize').value=String(j.page_size||6);
     document.getElementById('nRefresh').value=String(j.refresh_sec||1800);
     document.getElementById('nStatus').textContent=j.has_data?'运行中':'暂无数据';
     document.getElementById('nStatus').className='v '+(j.has_data?'ok':'warn');
-    document.getElementById('nKeyStatus').textContent=j.api_key_set?('已设置 '+(j.api_key_masked||'')):'未设置';
+    document.getElementById('nKeyStatus').textContent=j.api_key_set?('设备已保存 '+(j.api_key_masked||'')):(cachedKey?'浏览器已记忆，保存后写入设备':'未设置');
     document.getElementById('nKeyStatus').className='v '+(j.api_key_set?'ok':'warn');
     document.getElementById('nCategoryStatus').textContent=categoryName(j.category)+' · '+(j.page_size||6)+' 条';
     document.getElementById('nTitle').textContent=j.page_title||'热点资讯';
@@ -197,17 +221,20 @@ async function saveNews(){
   try{
     var r=await fetch('/news_config',fetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     var j=await r.json();
-    if(j.ok){logMsg('设置已保存。','ok');await loadNews();}
+    if(j.ok){saveCachedNewsKey(key);keyInput.dataset.keySet='1';logMsg('设置已保存。','ok');await loadNews();}
     else logMsg('保存失败: '+(j.msg||'unknown'),'bad');
   }catch(e){logMsg('保存失败: '+e,'bad');}
 }
 async function refreshNews(){
+  var btn=document.getElementById('nRefreshBtn');
+  if(btn&&btn.disabled)return;
   logMsg('正在刷新并上屏…');
   try{
     var r=await fetch('/news_show',fetchOpts({method:'POST'}));
     var j=await r.json();
     if(j.ok){logMsg('新闻已刷新。','ok');setTimeout(loadNews,800);}
-    else logMsg('刷新失败','bad');
+    else if(newsEpdBusy(j.err||j.msg)){logMsg('屏幕刷新中，请稍后再试。','warn');setNewsRefreshCooldown(20);}
+    else logMsg('刷新失败: '+(j.err||j.msg||'unknown'),'bad');
   }catch(e){logMsg('刷新失败: '+e,'bad');}
 }
 document.getElementById('nEnabled').addEventListener('change',function(){document.getElementById('nLabel').textContent=this.checked?'已开启':'已关闭';});

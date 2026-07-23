@@ -353,6 +353,7 @@ static void boot_display_route(void)
         display_policy_set_boot_display_active(false);
         return;
     }
+    display_policy_set_boot_display_active(false);
 
     int saved_mode = power_mgr_load_mode();
     int n = display_mode_count();
@@ -364,11 +365,6 @@ static void boot_display_route(void)
     esp_err_t err = display_mode_show(mode);
     if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
         calendar_display_wait_render_idle();
-    if (display_policy_display_epoch() != boot_epoch) {
-        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer user display request");
-        display_policy_set_boot_display_active(false);
-        return;
-    }
     /* 数据源不可用时（典型：轮播图但 SPIFFS 无图）回落到时钟，
      * 保留 NVS 中用户原偏好，等数据补齐后下次启动自动恢复。 */
     if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
@@ -572,7 +568,8 @@ static void quick_refresh_and_sleep(void)
     ESP_ERROR_CHECK(countdown_init());
     codex_quota_set_auto_network_allowed(false);
     ESP_ERROR_CHECK(codex_quota_init());
-    ESP_ERROR_CHECK(news_feed_init());
+    if (news_feed_init() != ESP_OK)
+        ESP_LOGW(TAG, "Quick-refresh: news unavailable");
 
     register_display_modes();
 
@@ -774,7 +771,8 @@ static void full_boot(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
-    ESP_ERROR_CHECK(news_feed_init());
+    if (news_feed_init() != ESP_OK)
+        ESP_LOGW(TAG, "News init failed; continuing without news");
     {
         bool write_mode_back = false;
         int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
