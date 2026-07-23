@@ -33,6 +33,16 @@
   --bt:#fff;--ok:#2E9E52;--er:#C62828;--wn:#E68A00;
   --hv:rgba(183,70,120,.07);--tg:rgba(183,70,120,.15);
 }
+[data-theme="dark"]{
+  --bg:#111318;--g1:rgba(93,169,255,.16);--g2:rgba(255,155,179,.10);
+  --cd:#1A1D24;--cb:rgba(255,255,255,.12);--ch:rgba(255,255,255,.06);--cs:0 8px 28px rgba(0,0,0,.35);
+  --sf:rgba(255,255,255,.07);--sb:rgba(255,255,255,.14);
+  --tx:#F2F5F8;--t2:rgba(226,232,240,.68);
+  --ac:#7CC7FF;--a2:#FF9BB3;--ag:rgba(124,199,255,.24);
+  --bt:#0F131A;--ok:#59D98E;--er:#FF6B7A;--wn:#FFC766;
+  --hv:rgba(124,199,255,.12);--tg:rgba(255,255,255,.16);
+  --deco:"*"
+}
 *{box-sizing:border-box;transition:background-color .35s,border-color .35s,color .3s}
 body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
   background:radial-gradient(1200px 800px at 20% -10%,var(--g1),transparent 60%),
@@ -146,6 +156,154 @@ body.page-gallery .card,body.page-timetable .card{width:100%;margin-left:auto!im
 body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .wrap>.row,body.page-timetable .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
 body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
+</style>
+<style id="dark-shell-fix-v3">
+[data-theme="dark"] body,
+[data-theme="dark"] body.page-shell,
+[data-theme="dark"] body.page-panel,
+[data-theme="dark"] body.page-task,
+[data-theme="dark"] body.page-wide,
+[data-theme="dark"] body.page-upload,
+[data-theme="dark"] body.page-gallery,
+[data-theme="dark"] body.page-timetable,
+[data-theme="dark"] body.page-board,
+[data-theme="dark"] body.config-page{
+  background:
+    radial-gradient(1200px 800px at 18% -8%,rgba(93,169,255,.18),transparent 60%),
+    radial-gradient(900px 600px at 100% 0%,rgba(255,155,179,.10),transparent 55%),
+    #111318!important;
+  color:#F2F5F8!important;
+}
+[data-theme="dark"] .nav,
+[data-theme="dark"] body .nav,
+[data-theme="dark"] .config-page .nav{
+  background:#171B22!important;
+  background-image:none!important;
+  border-color:rgba(255,255,255,.12)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.28)!important;
+}
+[data-theme="dark"] .nav a,
+[data-theme="dark"] body .nav a,
+[data-theme="dark"] .config-page .nav a{
+  background:#20242D!important;
+  background-image:none!important;
+  color:#E8EEF6!important;
+  border-color:rgba(255,255,255,.14)!important;
+  box-shadow:none!important;
+}
+[data-theme="dark"] .nav a:hover,
+[data-theme="dark"] .nav a.active,
+[data-theme="dark"] body .nav a:hover,
+[data-theme="dark"] body .nav a.active,
+[data-theme="dark"] .config-page .nav a:hover,
+[data-theme="dark"] .config-page .nav a.active{
+  background:#202938!important;
+  color:#9FD7FF!important;
+  border-color:#7CC7FF!important;
+  box-shadow:0 0 0 2px rgba(124,199,255,.22)!important;
+}
+[data-theme="dark"] .card,
+[data-theme="dark"] .section,
+[data-theme="dark"] .side-panel,
+[data-theme="dark"] .quick-card,
+[data-theme="dark"] .tool-section,
+[data-theme="dark"] .msg-panel,
+[data-theme="dark"] .web-font-panel,
+[data-theme="dark"] .preview-meta,
+[data-theme="dark"] .gcard,
+[data-theme="dark"] .dash-item,
+[data-theme="dark"] .overview-item,
+[data-theme="dark"] .switch-row,
+[data-theme="dark"] .field-group,
+[data-theme="dark"] .log,
+[data-theme="dark"] .pill,
+[data-theme="dark"] .summary-chip,
+[data-theme="dark"] .theme-pill,
+[data-theme="dark"] .seg,
+[data-theme="dark"] .ap-list,
+[data-theme="dark"] .ap-item,
+[data-theme="dark"] .wifi-chip,
+[data-theme="dark"] .kv,
+[data-theme="dark"] .onboard-card{
+  background:#171B22!important;
+  background-image:none!important;
+  border-color:rgba(255,255,255,.12)!important;
+  color:#DDE6F1!important;
+  box-shadow:0 12px 34px rgba(0,0,0,.24)!important;
+}
+[data-theme="dark"] .tool-section,
+[data-theme="dark"] .preview-meta,
+[data-theme="dark"] .log,
+[data-theme="dark"] .seg,
+[data-theme="dark"] .dash-item,
+[data-theme="dark"] .overview-item,
+[data-theme="dark"] .switch-row,
+[data-theme="dark"] .field-group,
+[data-theme="dark"] .ap-item,
+[data-theme="dark"] .wifi-chip,
+[data-theme="dark"] .kv{
+  background:#20242D!important;
+  box-shadow:none!important;
+}
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
+[data-theme="dark"] input[type="file"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] option{
+  background:#10141B!important;
+  background-image:none!important;
+  color:#F2F5F8!important;
+  border-color:rgba(255,255,255,.18)!important;
+  box-shadow:none!important;
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder{color:rgba(226,232,240,.48)!important}
+[data-theme="dark"] .sub,
+[data-theme="dark"] .k,
+[data-theme="dark"] label,
+[data-theme="dark"] .dash-label,
+[data-theme="dark"] .tool-title,
+[data-theme="dark"] .empty,
+[data-theme="dark"] .sd-note,
+[data-theme="dark"] .quick-card span,
+[data-theme="dark"] .switch-row span,
+[data-theme="dark"] .field-group label{
+  color:rgba(226,232,240,.70)!important;
+}
+[data-theme="dark"] .title,
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] .v,
+[data-theme="dark"] .dash-value,
+[data-theme="dark"] .quick-card b,
+[data-theme="dark"] .switch-row b{
+  color:#F2F5F8!important;
+}
+[data-theme="dark"] .btn.ghost,
+[data-theme="dark"] .btn:not(.primary):not(.danger){
+  background:#20242D!important;
+  color:#E8EEF6!important;
+  border-color:rgba(255,255,255,.16)!important;
+}
+[data-theme="dark"] .btn.primary,
+[data-theme="dark"] .btn:not(.ghost):not(.danger){
+  background:linear-gradient(135deg,#7CC7FF,#FF9BB3)!important;
+  color:#0F131A!important;
+  border-color:transparent!important;
+}
+[data-theme="dark"] .btn.danger{background:linear-gradient(135deg,#FF6B7A,#D73855)!important;color:#fff!important;border-color:transparent!important}
+[data-theme="dark"] .preview-stage{background:linear-gradient(180deg,#20242D,#151922)!important;border-color:rgba(255,255,255,.14)!important}
+[data-theme="dark"] .preview-stage canvas{background:#10141B!important;border-color:rgba(255,255,255,.12)!important;box-shadow:0 8px 22px rgba(0,0,0,.32)!important}
+[data-theme="dark"] .gthumb{background:#111318!important}
+[data-theme="dark"] .gthumb .ph{background:rgba(16,20,27,.82)!important;color:rgba(226,232,240,.70)!important}
+[data-theme="dark"] .seg button.on{background:#10141B!important;color:#9FD7FF!important}
+[data-theme="dark"] .toggle .sl{background:rgba(255,255,255,.18)!important}
+[data-theme="dark"] .toggle input:checked + .sl{background:#7CC7FF!important}
+[data-theme="dark"] .toggle .sl:before{background:#10141B!important}
 </style>
 </head>
 <body class="page-shell page-wide page-timetable">
@@ -505,6 +663,31 @@ async function showOnEpd(){
 
 document.getElementById('selDays').addEventListener('change',renderGrid);
 loadConfig();
+</script>
+<script id="nav-scroll-fix-v1">
+(function(){
+  function centerActiveNav(){
+    var nav=document.querySelector('.nav');
+    if(!nav) return;
+    var active=nav.querySelector('a.active,[aria-current="page"]');
+    if(!active) {
+      var here=location.pathname.replace(/\/$/,'')||'/';
+      active=Array.prototype.find.call(nav.querySelectorAll('a[href]'),function(a){
+        var path=new URL(a.getAttribute('href'),location.origin).pathname.replace(/\/$/,'')||'/';
+        return path===here;
+      });
+      if(active) active.classList.add('active');
+    }
+    if(!active) return;
+    requestAnimationFrame(function(){
+      var left=active.offsetLeft-(nav.clientWidth-active.offsetWidth)/2;
+      nav.scrollTo({left:Math.max(0,left),behavior:'auto'});
+    });
+  }
+  window.addEventListener('DOMContentLoaded',centerActiveNav);
+  window.addEventListener('load',centerActiveNav);
+  window.addEventListener('pageshow',centerActiveNav);
+})();
 </script>
 </body>
 </html>
