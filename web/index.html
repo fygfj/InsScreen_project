@@ -173,7 +173,7 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 /* ── Mascot ── */
 .mascot{flex-shrink:0}
 .mascot svg{display:none;width:64px;height:64px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.08));animation:m-bob 3s ease-in-out infinite}
-[data-theme="loopy"] .m-loopy,[data-theme="kitty"] .m-kitty,[data-theme="lotso"] .m-lotso,[data-theme="dark"] .m-loopy{display:block}
+[data-theme="loopy"] .m-loopy,[data-theme="kitty"] .m-kitty,[data-theme="lotso"] .m-lotso,[data-theme="dark"] .m-tom{display:block}
 @keyframes m-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @media(max-width:480px){.mascot svg{width:48px;height:48px}}
 /* ── Side Decorations ── */
@@ -502,6 +502,21 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
         <svg class="m-loopy" viewBox="0 0 100 100"><circle cx="22" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="78" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="50" cy="55" r="38" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><ellipse cx="50" cy="62" rx="22" ry="16" fill="#FFDCE6"/><ellipse cx="37" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="63" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="39" cy="47" r="4" fill="#333"/><circle cx="65" cy="47" r="4" fill="#333"/><circle cx="40.5" cy="45" r="1.5" fill="#fff"/><circle cx="66.5" cy="45" r="1.5" fill="#fff"/><circle cx="26" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><circle cx="74" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><ellipse cx="50" cy="58" rx="3" ry="2" fill="#E88AA6"/><path d="M43,66 Q50,73 57,66" fill="none" stroke="#D07090" stroke-width="2" stroke-linecap="round"/></svg>
         <svg class="m-kitty" viewBox="0 0 100 100"><path d="M25,35 L15,5 L45,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><path d="M75,35 L85,5 L55,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><ellipse cx="50" cy="55" rx="38" ry="35" fill="#fff" stroke="#555" stroke-width="2"/><circle cx="18" cy="15" r="9" fill="#FF4D6D"/><circle cx="10" cy="10" r="7" fill="#FF6B88"/><circle cx="26" cy="10" r="7" fill="#FF6B88"/><circle cx="18" cy="12" r="2.5" fill="#FFD700"/><ellipse cx="38" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="62" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="50" cy="60" rx="3" ry="2" fill="#FFD700"/><line x1="5" y1="52" x2="28" y2="56" stroke="#555" stroke-width="1.2"/><line x1="5" y1="59" x2="28" y2="60" stroke="#555" stroke-width="1.2"/><line x1="5" y1="66" x2="28" y2="64" stroke="#555" stroke-width="1.2"/><line x1="95" y1="52" x2="72" y2="56" stroke="#555" stroke-width="1.2"/><line x1="95" y1="59" x2="72" y2="60" stroke="#555" stroke-width="1.2"/><line x1="95" y1="66" x2="72" y2="64" stroke="#555" stroke-width="1.2"/></svg>
         <svg class="m-lotso" viewBox="0 0 100 100"><circle cx="20" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="20" cy="22" r="8" fill="#E8A8C0"/><circle cx="80" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="80" cy="22" r="8" fill="#E8A8C0"/><circle cx="50" cy="55" r="38" fill="#D06888" stroke="#B74678" stroke-width="2"/><ellipse cx="50" cy="64" rx="20" ry="14" fill="#F0C8D8"/><ellipse cx="36" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="64" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="37.5" cy="47" r="3.5" fill="#333"/><circle cx="65.5" cy="47" r="3.5" fill="#333"/><circle cx="39" cy="45" r="1.2" fill="#fff"/><circle cx="67" cy="45" r="1.2" fill="#fff"/><path d="M29,40 Q34,36 42,39" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><path d="M58,39 Q66,36 71,40" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><ellipse cx="50" cy="60" rx="5" ry="3.5" fill="#9B3F6B"/><path d="M40,69 Q50,77 60,69" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/></svg>
+        <!-- 深色主题专用的汤姆猫头像，其他主题仍使用各自原来的头像。 -->
+        <svg class="m-tom" viewBox="0 0 100 100" aria-label="汤姆猫头像">
+          <path d="M22 38 L15 8 L42 28 Q50 24 58 28 L85 8 L78 38Z" fill="#71879A" stroke="#D8E3EA" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M21 15 L26 34 L39 28Z" fill="#ECA7AE"/><path d="M79 15 L74 34 L61 28Z" fill="#ECA7AE"/>
+          <ellipse cx="50" cy="57" rx="36" ry="34" fill="#71879A" stroke="#D8E3EA" stroke-width="2.4"/>
+          <path d="M30 62 Q29 48 39 43 Q49 48 50 62 Q51 48 61 43 Q71 48 70 62 Q68 80 50 84 Q32 80 30 62Z" fill="#EEF2F4"/>
+          <ellipse cx="39" cy="48" rx="8" ry="11" fill="#E8F082" stroke="#26313A" stroke-width="1.6"/>
+          <ellipse cx="61" cy="48" rx="8" ry="11" fill="#E8F082" stroke="#26313A" stroke-width="1.6"/>
+          <ellipse cx="41" cy="50" rx="2.8" ry="6" fill="#26313A"/><ellipse cx="59" cy="50" rx="2.8" ry="6" fill="#26313A"/>
+          <circle cx="42" cy="46" r="1.4" fill="#fff"/><circle cx="60" cy="46" r="1.4" fill="#fff"/>
+          <path d="M44 61 Q50 56 56 61 Q54 67 50 68 Q46 67 44 61Z" fill="#E98E9B" stroke="#26313A" stroke-width="1.5"/>
+          <path d="M50 68 Q50 75 42 77 M50 68 Q50 75 58 77" fill="none" stroke="#26313A" stroke-width="1.7" stroke-linecap="round"/>
+          <path d="M12 60 L37 64 M10 69 L36 69 M88 60 L63 64 M90 69 L64 69" fill="none" stroke="#D8E3EA" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M31 36 Q37 31 43 34 M57 34 Q63 31 69 36" fill="none" stroke="#26313A" stroke-width="2" stroke-linecap="round"/>
+        </svg>
       </div>
       <div class="title">墨水屏上传面板</div>
     </div>
