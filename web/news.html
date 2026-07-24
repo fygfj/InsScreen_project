@@ -263,7 +263,7 @@ input:focus,select:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3p
             </select>
           </div>
           <div class="row">
-            <button class="btn" onclick="saveNews()">保存设置</button>
+            <button class="btn" id="nSaveBtn" onclick="saveNews()">保存设置</button>
             <button class="btn ghost" id="nRefreshBtn" onclick="refreshNews()">立即刷新</button>
           </div>
         </div>
@@ -371,28 +371,33 @@ async function loadNews(){
   }catch(e){logMsg('加载失败: '+e,'bad');}
 }
 async function saveNews(){
+  var saveBtn=document.getElementById('nSaveBtn');
+  if(saveBtn&&saveBtn.disabled)return;
   var keyInput=document.getElementById('nApiKey');
   var key=keyInput.value.trim();
   var cfg={enabled:document.getElementById('nEnabled').checked,category:document.getElementById('nCategory').value,page_size:parseInt(document.getElementById('nPageSize').value,10),refresh_sec:parseInt(document.getElementById('nRefresh').value,10)};
   if(key)cfg.api_key=key;
   if(cfg.enabled&&!key&&keyInput.dataset.keySet!=='1'){logMsg('请先填写聚合数据 API Key','bad');return;}
   logMsg('保存中…');
+  if(saveBtn)saveBtn.disabled=true;
   try{
     var r=await fetch('/news_config',fetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     var j=await r.json();
-    if(j.ok){saveCachedNewsKey(key);keyInput.dataset.keySet='1';logMsg('设置已保存。','ok');await loadNews();}
+    if(j.ok){saveCachedNewsKey(key);keyInput.dataset.keySet='1';logMsg('设置已保存，新闻缓存会自动更新。','ok');setNewsRefreshCooldown(3);await loadNews();}
     else logMsg('保存失败: '+(j.msg||'unknown'),'bad');
   }catch(e){logMsg('保存失败: '+e,'bad');}
+  finally{if(saveBtn)saveBtn.disabled=false;}
 }
 async function refreshNews(){
   var btn=document.getElementById('nRefreshBtn');
   if(btn&&btn.disabled)return;
-  logMsg('正在刷新并上屏…');
+  logMsg('正在更新屏幕…');
+  setNewsRefreshCooldown(3);
   try{
     var r=await fetch('/news_show',fetchOpts({method:'POST'}));
     var j=await r.json();
-    if(j.ok){logMsg('新闻已刷新。','ok');setTimeout(loadNews,800);}
-    else if(newsEpdBusy(j.err||j.msg)){logMsg('屏幕刷新中，请稍后再试。','warn');setNewsRefreshCooldown(20);}
+    if(j.ok){logMsg('新闻已发送到屏幕。','ok');setTimeout(loadNews,1200);}
+    else if(j.busy||newsEpdBusy(j.err||j.msg)){logMsg('屏幕刷新中，请稍后再试。','warn');setNewsRefreshCooldown(20);}
     else logMsg('刷新失败: '+(j.err||j.msg||'unknown'),'bad');
   }catch(e){logMsg('刷新失败: '+e,'bad');}
 }

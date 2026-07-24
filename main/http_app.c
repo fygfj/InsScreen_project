@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 #include "nvs.h"
@@ -1134,19 +1135,29 @@ static esp_err_t news_show_post_handler(httpd_req_t *req)
 
     drain_request_body(req);
 
+    ESP_LOGI(TAG, "news_show request: free_heap=%lu largest=%lu",
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
     esp_err_t err = news_feed_refresh_and_show();
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_NEWS);
         power_mgr_save_mode(DISPLAY_MODE_NEWS);
         buzzer_beep_content_success();
-    } else {
-        buzzer_beep_display_error();
     }
 
-    char json[128];
-    snprintf(json, sizeof(json), "{\"ok\":%s,\"err\":\"%s\"}",
+    bool busy = (err == ESP_ERR_INVALID_STATE || err == ESP_ERR_TIMEOUT);
+    if (err != ESP_OK && !busy) {
+        buzzer_beep_display_error();
+    }
+    char json[160];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"busy\":%s,\"err\":\"%s\"}",
              err == ESP_OK ? "true" : "false",
+             busy ? "true" : "false",
              err == ESP_OK ? "" : esp_err_to_name(err));
+    ESP_LOGI(TAG, "news_show response: err=%s busy=%d free_heap=%lu",
+             esp_err_to_name(err), busy ? 1 : 0,
+             (unsigned long)esp_get_free_heap_size());
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;

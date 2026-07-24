@@ -64,6 +64,7 @@ static atomic_bool       s_pending;
 static atomic_uint       s_pending_epoch;
 static atomic_int        s_pending_flags;
 static int64_t           s_last_fetch_us;
+static int64_t           s_user_busy_until_us;
 
 static void normalize_source_url(char *url, size_t url_len);
 static bool news_api_key_valid(const char *key);
@@ -78,6 +79,9 @@ enum {
     NEWS_RENDER_ADVANCE     = 1 << 0,
     NEWS_RENDER_FORCE_FETCH = 1 << 1,
 };
+
+#define NEWS_POST_CONFIG_COOLDOWN_US (2500LL * 1000LL)
+#define NEWS_MANUAL_REFRESH_COOLDOWN_US (8000LL * 1000LL)
 
 static uint32_t clamp_refresh_sec(uint32_t sec)
 {
@@ -639,12 +643,12 @@ static void draw_wrapped(fb_t *fb, int x, int y, int max_w, const char *text,
     }
 }
 
-static void render_current(unsigned epoch)
+static esp_err_t render_current(unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb) {
         ESP_LOGE(TAG, "fb_create failed");
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     news_feed_config_t cfg;
@@ -741,34 +745,33 @@ static void render_current(unsigned epoch)
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
         ESP_LOGI(TAG, "skip stale news render");
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
-    const char *raw_path = "/spiffs/image.bin";
-    fb_raw_file_lock();
-    esp_err_t err = fb_export(fb, raw_path);
-    fb_destroy(fb);
-
-    if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
-        esp_err_t disp_err = epd_display_from_file(raw_path);
-        if (disp_err == ESP_OK) {
-            display_policy_set_manual_screen_active(true);
-            scheduler_notify_manual_show();
-            ESP_LOGI(TAG, "News displayed");
-        } else {
-            ESP_LOGE(TAG, "display failed: %s", esp_err_to_name(disp_err));
-        }
-    } else if (err != ESP_OK) {
-        ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(err));
+    if (!epd_is_ready() || !display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        ESP_LOGW(TAG, "skip news display: epd_ready=%d current_epoch=%d",
+                 epd_is_ready() ? 1 : 0,
+                 display_policy_epoch_is_current(epoch) ? 1 : 0);
+        return ESP_ERR_INVALID_STATE;
     }
-    fb_raw_file_unlock();
+
+    esp_err_t err = epd_display_fb_free(fb);
+    if (err == ESP_OK) {
+        display_policy_set_manual_screen_active(true);
+        scheduler_notify_manual_show();
+        ESP_LOGI(TAG, "News displayed");
+    } else {
+        ESP_LOGE(TAG, "display failed: %s", esp_err_to_name(err));
+    }
+    return err;
 }
 
-esp_err_t news_feed_fetch_now(void)
+static esp_err_t news_feed_fetch_now_wait(uint32_t wait_ms)
 {
     if (!s_fetch_mutex)
         return ESP_ERR_INVALID_STATE;
-    if (xSemaphoreTake(s_fetch_mutex, pdMS_TO_TICKS(200)) != pdTRUE)
+    if (xSemaphoreTake(s_fetch_mutex, pdMS_TO_TICKS(wait_ms)) != pdTRUE)
         return ESP_ERR_TIMEOUT;
 
     news_feed_config_t cfg;
@@ -813,6 +816,11 @@ esp_err_t news_feed_fetch_now(void)
     xSemaphoreGive(s_fetch_mutex);
     ESP_LOGI(TAG, "Fetched %d news items", parsed.item_count);
     return ESP_OK;
+}
+
+esp_err_t news_feed_fetch_now(void)
+{
+    return news_feed_fetch_now_wait(200);
 }
 
 static bool data_needs_fetch(const news_feed_config_t *cfg)
@@ -873,12 +881,22 @@ static void render_task(void *arg)
         cfg = s_cfg;
         portEXIT_CRITICAL(&s_mux);
 
-        if ((flags & NEWS_RENDER_FORCE_FETCH) || data_needs_fetch(&cfg))
-            (void)news_feed_fetch_now();
+        bool forced_fetch = (flags & NEWS_RENDER_FORCE_FETCH) != 0;
+        esp_err_t fetch_err = ESP_OK;
+        if (forced_fetch)
+            fetch_err = news_feed_fetch_now_wait(NEWS_HTTP_TIMEOUT_MS + 6000);
+        else if (data_needs_fetch(&cfg))
+            fetch_err = news_feed_fetch_now();
+
+        if (forced_fetch && fetch_err != ESP_OK) {
+            ESP_LOGW(TAG, "manual news refresh skipped display: fetch failed (%s)",
+                     esp_err_to_name(fetch_err));
+            break;
+        }
         if (flags & NEWS_RENDER_ADVANCE)
             advance_index();
 
-        render_current(epoch);
+        (void)render_current(epoch);
 
         if (!atomic_load(&s_pending))
             break;
@@ -890,21 +908,47 @@ static void render_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static esp_err_t queue_render(int flags, unsigned *out_epoch)
+static bool user_busy_window_active(void)
+{
+    int64_t until;
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_mux);
+    until = s_user_busy_until_us;
+    portEXIT_CRITICAL(&s_mux);
+    return until > 0 && now < until;
+}
+
+static void set_user_busy_window_us(int64_t duration_us)
+{
+    int64_t until = esp_timer_get_time() + duration_us;
+    portENTER_CRITICAL(&s_mux);
+    s_user_busy_until_us = until;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+static esp_err_t queue_render(int flags, unsigned *out_epoch, bool allow_pending)
 {
     if (!s_render_mutex)
         return ESP_ERR_INVALID_STATE;
 
-    unsigned epoch = display_policy_begin_manual_display();
-    if (out_epoch)
-        *out_epoch = epoch;
+    if (!allow_pending && user_busy_window_active())
+        return ESP_ERR_INVALID_STATE;
 
     if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
+        if (!allow_pending)
+            return ESP_ERR_INVALID_STATE;
+        unsigned epoch = display_policy_begin_manual_display();
+        if (out_epoch)
+            *out_epoch = epoch;
         atomic_store(&s_pending_epoch, epoch);
         atomic_fetch_or(&s_pending_flags, flags);
         atomic_store(&s_pending, true);
         return ESP_OK;
     }
+
+    unsigned epoch = display_policy_begin_manual_display();
+    if (out_epoch)
+        *out_epoch = epoch;
 
     atomic_store(&s_pending_flags, flags);
     BaseType_t ret = xTaskCreate(render_task, "news_render", 24576,
@@ -913,22 +957,24 @@ static esp_err_t queue_render(int flags, unsigned *out_epoch)
         xSemaphoreGive(s_render_mutex);
         return ESP_ERR_NO_MEM;
     }
+    if (!allow_pending)
+        set_user_busy_window_us(NEWS_MANUAL_REFRESH_COOLDOWN_US);
     return ESP_OK;
 }
 
 esp_err_t news_feed_show(void)
 {
-    return queue_render(0, NULL);
+    return queue_render(0, NULL, true);
 }
 
 esp_err_t news_feed_show_next(void)
 {
-    return queue_render(NEWS_RENDER_ADVANCE, NULL);
+    return queue_render(NEWS_RENDER_ADVANCE, NULL, true);
 }
 
 esp_err_t news_feed_refresh_and_show(void)
 {
-    return queue_render(NEWS_RENDER_FORCE_FETCH, NULL);
+    return queue_render(NEWS_RENDER_FORCE_FETCH, NULL, false);
 }
 
 static void news_task(void *arg)
@@ -1026,20 +1072,25 @@ esp_err_t news_feed_set_config(const news_feed_config_t *cfg)
     }
 
     portENTER_CRITICAL(&s_mux);
+    bool data_source_changed =
+        next.enabled != s_cfg.enabled ||
+        next.page_size != s_cfg.page_size ||
+        strcmp(next.source_url, s_cfg.source_url) != 0;
     s_cfg = next;
-    if (!next.enabled) {
+    if (!next.enabled || data_source_changed) {
         s_data.valid = false;
         s_data.item_count = 0;
+        s_data.current_index = 0;
+        s_last_fetch_us = 0;
     }
     portEXIT_CRITICAL(&s_mux);
     nvs_save();
+    set_user_busy_window_us(NEWS_POST_CONFIG_COOLDOWN_US);
     ESP_LOGI(TAG, "config saved enabled=%d key_set=%d url_len=%u refresh=%lus",
              next.enabled ? 1 : 0, next.api_key[0] ? 1 : 0,
              (unsigned)strlen(next.source_url),
              (unsigned long)next.refresh_sec);
 
-    if (s_task_wakeup)
-        xSemaphoreGive(s_task_wakeup);
     return ESP_OK;
 }
 

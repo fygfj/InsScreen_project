@@ -41,9 +41,27 @@
 #include "power_mgr.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
+#include "esp_system.h"
 
 static const char *TAG = "app";
 /* design by @MiaooAim */
+
+static const char *reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+    }
+}
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
 {
@@ -73,13 +91,15 @@ static int normalize_saved_mode(int saved_mode, int mode_count, bool *write_back
     if (write_back)
         *write_back = false;
 
-    if (saved_mode < 0 || saved_mode >= mode_count) {
+    if (saved_mode < 0 || saved_mode >= mode_count)
+    {
         if (write_back)
             *write_back = true;
         return DISPLAY_MODE_CLOCK;
     }
 
-    if (saved_mode == DISPLAY_MODE_SLIDESHOW && !power_mgr_saved_mode_has_marker()) {
+    if (saved_mode == DISPLAY_MODE_SLIDESHOW && !power_mgr_saved_mode_has_marker())
+    {
         ESP_LOGW(TAG, "Saved slideshow mode has no v2 marker; treating it as legacy stale state");
         if (write_back)
             *write_back = true;
@@ -92,7 +112,11 @@ static int normalize_saved_mode(int saved_mode, int mode_count, bool *write_back
 static void render_welcome_screen(void)
 {
     fb_t *fb = fb_create();
-    if (!fb) { ESP_LOGE(TAG, "FB alloc failed"); return; }
+    if (!fb)
+    {
+        ESP_LOGE(TAG, "FB alloc failed");
+        return;
+    }
     fb_clear(fb);
 
     int W = fb->width;
@@ -139,7 +163,8 @@ static void render_welcome_screen(void)
     y += ln + gap;
 
     bool sta = wifi_manager_sta_connected();
-    if (sta) {
+    if (sta)
+    {
         char buf[80];
         snprintf(buf, sizeof(buf), "STA:%s",
                  wifi_manager_get_sta_ssid());
@@ -149,7 +174,9 @@ static void render_welcome_screen(void)
                  wifi_manager_get_sta_ip());
         welcome_draw_text_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
-    } else {
+    }
+    else
+    {
         welcome_draw_text(fb, left_x, y,
                           "STA:\xe7\xa6\xbb\xe7\xba\xbf",
                           COLOR_BLACK, body_sc);
@@ -232,7 +259,8 @@ static void render_welcome_screen(void)
 static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
 {
     fb_t *fb = fb_create();
-    if (!fb) {
+    if (!fb)
+    {
         ESP_LOGE(TAG, "SPIFFS recovery FB alloc failed");
         return ESP_ERR_NO_MEM;
     }
@@ -318,7 +346,8 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 
     fb_reserve_planes_early();
     esp_err_t epd_err = epd_init();
-    if (epd_err != ESP_OK) {
+    if (epd_err != ESP_OK)
+    {
         ESP_LOGW(TAG, "SPIFFS diagnostic display skipped: EPD init failed (%s)",
                  esp_err_to_name(epd_err));
         fb_release_reserved_planes();
@@ -327,9 +356,12 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 
     (void)display_policy_begin_manual_display();
     esp_err_t disp_err = render_spiffs_recovery_screen(spiffs_err);
-    if (disp_err == ESP_OK) {
+    if (disp_err == ESP_OK)
+    {
         ESP_LOGI(TAG, "SPIFFS recovery screen displayed");
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "SPIFFS recovery screen failed: %s",
                  esp_err_to_name(disp_err));
     }
@@ -348,7 +380,8 @@ static void boot_display_route(void)
     ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying 10s");
     vTaskDelay(pdMS_TO_TICKS(10000));
 
-    if (display_policy_display_epoch() != boot_epoch) {
+    if (display_policy_display_epoch() != boot_epoch)
+    {
         ESP_LOGI(TAG, "boot_display_route: canceled by newer user display request");
         display_policy_set_boot_display_active(false);
         return;
@@ -367,7 +400,8 @@ static void boot_display_route(void)
         calendar_display_wait_render_idle();
     /* 数据源不可用时（典型：轮播图但 SPIFFS 无图）回落到时钟，
      * 保留 NVS 中用户原偏好，等数据补齐后下次启动自动恢复。 */
-    if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
+    if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK)
+    {
         ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
                  mode, esp_err_to_name(err));
         err = display_mode_show(DISPLAY_MODE_CLOCK);
@@ -384,10 +418,13 @@ static void boot_display_route(void)
         power_mgr_save_mode(mode);
 
     display_policy_set_boot_display_active(false);
-    if (err == ESP_OK) {
+    if (err == ESP_OK)
+    {
         ESP_LOGI(TAG, "boot_display_route: done, mode %d active%s",
                  mode, (mode != saved_mode) ? " (fallback)" : "");
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "boot_display_route: no active mode (%s)",
                  esp_err_to_name(err));
     }
@@ -396,7 +433,8 @@ static void boot_display_route(void)
 static void start_mdns(void)
 {
     esp_err_t err = mdns_init();
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGW(TAG, "mDNS init failed: %s", esp_err_to_name(err));
         return;
     }
@@ -426,15 +464,15 @@ static bool app_codex_config_ready(void)
 
 static void register_display_modes(void)
 {
-    display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
-    display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
-    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表",   timetable_show });
-    display_mode_register(&(display_mode_entry_t){ "weather",   "天气",     weather_display_cached });
-    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
-    display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
-    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
-    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
-    display_mode_register(&(display_mode_entry_t){ "news",      "热点资讯", news_feed_show });
+    display_mode_register(&(display_mode_entry_t){"clock", "时钟", clock_display_show});
+    display_mode_register(&(display_mode_entry_t){"calendar", "日历", calendar_display_show_current});
+    display_mode_register(&(display_mode_entry_t){"timetable", "课程表", timetable_show});
+    display_mode_register(&(display_mode_entry_t){"weather", "天气", weather_display_cached});
+    display_mode_register(&(display_mode_entry_t){"slideshow", "轮播图", scheduler_show_next_image});
+    display_mode_register(&(display_mode_entry_t){"todo", "待办事项", todo_show});
+    display_mode_register(&(display_mode_entry_t){"countdown", "倒计时", countdown_show});
+    display_mode_register(&(display_mode_entry_t){"codex", "额度", codex_quota_show});
+    display_mode_register(&(display_mode_entry_t){"news", "热点资讯", news_feed_show});
 }
 
 static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather)
@@ -442,7 +480,8 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
     bool weather_needed = false;
     bool wifi_needed = false;
 
-    switch (mode) {
+    switch (mode)
+    {
     case DISPLAY_MODE_WEATHER:
         weather_needed = app_weather_config_ready();
         wifi_needed = weather_needed;
@@ -453,11 +492,13 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
     case DISPLAY_MODE_NEWS:
         wifi_needed = news_feed_config_ready();
         break;
-    case DISPLAY_MODE_CLOCK: {
+    case DISPLAY_MODE_CLOCK:
+    {
         clock_config_t cc;
         if (!time_valid)
             wifi_needed = true;
-        if (clock_display_get_config(&cc) == ESP_OK && cc.show_weather) {
+        if (clock_display_get_config(&cc) == ESP_OK && cc.show_weather)
+        {
             weather_needed = app_weather_config_ready();
             wifi_needed = wifi_needed || weather_needed;
         }
@@ -466,7 +507,8 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
     case DISPLAY_MODE_CALENDAR:
         if (!time_valid)
             wifi_needed = true;
-        if (calendar_display_style_uses_weather()) {
+        if (calendar_display_style_uses_weather())
+        {
             weather_needed = app_weather_config_ready();
             wifi_needed = wifi_needed || weather_needed;
         }
@@ -476,7 +518,8 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
     case DISPLAY_MODE_COUNTDOWN:
         wifi_needed = !time_valid;
         break;
-    case DISPLAY_MODE_SLIDESHOW: {
+    case DISPLAY_MODE_SLIDESHOW:
+    {
         slideshow_config_t sc;
         if (scheduler_get_config(&sc) == ESP_OK && sc.clock_overlay && !time_valid)
             wifi_needed = true;
@@ -494,8 +537,10 @@ static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather
 
 static bool full_boot_should_prefetch_weather(int mode)
 {
-    switch (mode) {
-    case DISPLAY_MODE_CLOCK: {
+    switch (mode)
+    {
+    case DISPLAY_MODE_CLOCK:
+    {
         clock_config_t cc;
         return clock_display_get_config(&cc) == ESP_OK && cc.show_weather;
     }
@@ -511,17 +556,28 @@ static bool full_boot_should_prefetch_weather(int mode)
 
 static const char *mode_name_for_log(int mode)
 {
-    switch (mode) {
-    case DISPLAY_MODE_CLOCK: return "clock";
-    case DISPLAY_MODE_CALENDAR: return "calendar";
-    case DISPLAY_MODE_TIMETABLE: return "timetable";
-    case DISPLAY_MODE_WEATHER: return "weather";
-    case DISPLAY_MODE_SLIDESHOW: return "slideshow";
-    case DISPLAY_MODE_TODO: return "todo";
-    case DISPLAY_MODE_COUNTDOWN: return "countdown";
-    case DISPLAY_MODE_CODEX_QUOTA: return "codex";
-    case DISPLAY_MODE_NEWS: return "news";
-    default: return "unknown";
+    switch (mode)
+    {
+    case DISPLAY_MODE_CLOCK:
+        return "clock";
+    case DISPLAY_MODE_CALENDAR:
+        return "calendar";
+    case DISPLAY_MODE_TIMETABLE:
+        return "timetable";
+    case DISPLAY_MODE_WEATHER:
+        return "weather";
+    case DISPLAY_MODE_SLIDESHOW:
+        return "slideshow";
+    case DISPLAY_MODE_TODO:
+        return "todo";
+    case DISPLAY_MODE_COUNTDOWN:
+        return "countdown";
+    case DISPLAY_MODE_CODEX_QUOTA:
+        return "codex";
+    case DISPLAY_MODE_NEWS:
+        return "news";
+    default:
+        return "unknown";
     }
 }
 
@@ -531,7 +587,8 @@ static void quick_refresh_and_sleep(void)
     int mode = power_mgr_load_mode();
 
     esp_err_t spiffs_err = spiffs_mount_init();
-    if (spiffs_err != ESP_OK) {
+    if (spiffs_err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Quick-refresh: SPIFFS unavailable (%s), sleeping instead of rebooting",
                  esp_err_to_name(spiffs_err));
         power_mgr_enter_sleep();
@@ -545,7 +602,8 @@ static void quick_refresh_and_sleep(void)
     epd_load_panel_from_nvs();
     fb_reserve_planes_early();
     esp_err_t epd_err = epd_init();
-    if (epd_err != ESP_OK) {
+    if (epd_err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Quick-refresh: EPD init failed (%s), sleeping instead of rebooting",
                  esp_err_to_name(epd_err));
         power_mgr_enter_sleep();
@@ -590,34 +648,45 @@ static void quick_refresh_and_sleep(void)
     ESP_LOGI(TAG, "Quick-refresh: restoring mode %d (%s)",
              mode, display_mode_name(mode));
 
-    if (need_wifi) {
+    if (need_wifi)
+    {
         ESP_LOGI(TAG, "Quick-refresh: WiFi enabled for mode %s (time_valid=%d)",
                  display_mode_name(mode), time_valid ? 1 : 0);
         esp_err_t wifi_err = wifi_manager_init_sta_only();
-        if (wifi_err != ESP_OK) {
+        if (wifi_err != ESP_OK)
+        {
             ESP_LOGW(TAG, "Quick-refresh: STA-only WiFi unavailable: %s",
                      esp_err_to_name(wifi_err));
         }
 
-        if (wifi_err == ESP_OK && wifi_manager_sta_connected()) {
+        if (wifi_err == ESP_OK && wifi_manager_sta_connected())
+        {
             time_sync_init();
-            for (int i = 0; i < 80; i++) {
+            for (int i = 0; i < 80; i++)
+            {
                 struct tm tm;
-                if (time_sync_get_local(&tm)) break;
+                if (time_sync_get_local(&tm))
+                    break;
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
         }
-    } else {
+    }
+    else
+    {
         ESP_LOGI(TAG, "Quick-refresh: WiFi skipped for mode %s (time_valid=%d)",
                  display_mode_name(mode), time_valid ? 1 : 0);
     }
 
-    if (mode == DISPLAY_MODE_CALENDAR) {
-        prefetch_weather = prefetch_weather && need_wifi;
-    } else if (mode == DISPLAY_MODE_CLOCK) {
+    if (mode == DISPLAY_MODE_CALENDAR)
+    {
         prefetch_weather = prefetch_weather && need_wifi;
     }
-    if (prefetch_weather) {
+    else if (mode == DISPLAY_MODE_CLOCK)
+    {
+        prefetch_weather = prefetch_weather && need_wifi;
+    }
+    if (prefetch_weather)
+    {
         esp_err_t wx_err = weather_request_cache_fetch_wait(120000);
         if (wx_err != ESP_OK)
             ESP_LOGW(TAG, "Quick-refresh: weather prefetch failed: %s",
@@ -625,45 +694,57 @@ static void quick_refresh_and_sleep(void)
     }
 
     esp_err_t err;
-    if (mode == DISPLAY_MODE_WEATHER) {
+    if (mode == DISPLAY_MODE_WEATHER)
+    {
         /* Deep sleep clears the in-RAM weather cache; timer wake must fetch
          * on the weather task stack, then sleep after the EPD update finishes. */
         (void)display_policy_begin_manual_display();
         display_mode_set_active(mode);
         err = weather_request_fullscreen_fetch_wait(90000);
-    } else {
+    }
+    else
+    {
         err = display_mode_show_request(mode, NULL);
     }
     bool used_fallback = false;
 
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGW(TAG, "Quick-refresh: mode %d failed, trying clock", mode);
         err = display_mode_show_request(0, NULL);
         used_fallback = true;
     }
 
     bool displayed = false;
-    if (err == ESP_OK) {
+    if (err == ESP_OK)
+    {
         displayed = true;
         if (write_mode_back)
             power_mgr_save_mode(mode);
-        if (!used_fallback) {
+        if (!used_fallback)
+        {
             /* Original mode succeeded — no need to update NVS */
             ESP_LOGI(TAG, "Quick-refresh: mode %d displayed", mode);
-        } else {
+        }
+        else
+        {
             /* Fell back to clock for *this* wake-up only.
              * Keep the user's preferred mode in NVS so next wake-up
              * retries it (e.g. SNTP may succeed by then). */
             ESP_LOGW(TAG, "Quick-refresh: showing clock as fallback, "
-                     "keeping saved mode %d for next wake", mode);
+                          "keeping saved mode %d for next wake",
+                     mode);
         }
         if (strcmp(display_mode_name(used_fallback ? 0 : mode), "calendar") == 0)
             calendar_display_wait_render_idle();
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "Quick-refresh: clock fallback also failed");
     }
 
-    if (displayed) {
+    if (displayed)
+    {
         ESP_LOGI(TAG, "Quick-refresh: display complete, sleep guard will wait for EPD settle");
     }
 
@@ -678,7 +759,8 @@ static void full_boot(void)
     ESP_LOGI(TAG, "Full boot path: normal startup, AP+STA/HTTP/mDNS backend will stay available");
     esp_err_t spiffs_err = spiffs_mount_init();
     const bool spiffs_ok = (spiffs_err == ESP_OK);
-    if (!spiffs_ok) {
+    if (!spiffs_ok)
+    {
         ESP_LOGE(TAG, "SPIFFS unavailable (%s); booting AP/Web diagnostics without formatting",
                  esp_err_to_name(spiffs_err));
     }
@@ -695,26 +777,33 @@ static void full_boot(void)
 
     power_config_t power_cfg = {0};
     bool low_power_enabled = false;
-    if (power_mgr_get_config(&power_cfg) == ESP_OK) {
+    if (power_mgr_get_config(&power_cfg) == ESP_OK)
+    {
         low_power_enabled = power_cfg.enabled;
     }
-    if (low_power_enabled) {
+    if (low_power_enabled)
+    {
         ESP_LOGI(TAG, "Low-power button is enabled: normal boot keeps AP/HTTP online, WiFi uses power-save");
         (void)wifi_manager_set_power_save_enabled(true);
-    } else {
+    }
+    else
+    {
         ESP_LOGI(TAG, "Low-power button is disabled: normal boot uses WiFi max-performance mode");
         (void)wifi_manager_set_power_save_enabled(false);
     }
 
     start_mdns();
 
-    if (wifi_manager_sta_connected()) {
+    if (wifi_manager_sta_connected())
+    {
         ESP_LOGI(TAG, "Connected to \"%s\", STA IP: %s",
                  wifi_manager_get_sta_ssid(), wifi_manager_get_sta_ip());
         ESP_LOGI(TAG, "Access http://%s.local/ or http://%s/",
                  device_identity_get_mdns_hostname(), wifi_manager_get_sta_ip());
         time_sync_init();
-    } else {
+    }
+    else
+    {
         ESP_LOGI(TAG, "AP-only: connect to SSID \"%s\" (default AP password)",
                  wifi_manager_get_ap_ssid());
     }
@@ -725,7 +814,8 @@ static void full_boot(void)
              (int)epd_get_panel(), epd_width(), epd_height());
     /* Reserve display planes only when the filesystem is usable; diagnostic
      * mode keeps RAM available for HTTP and recovery actions. */
-    if (spiffs_ok) {
+    if (spiffs_ok)
+    {
         fb_reserve_planes_early();
     }
 
@@ -735,20 +825,31 @@ static void full_boot(void)
     };
     ESP_ERROR_CHECK(http_app_start(&cfg));
 
-    if (!spiffs_ok) {
+    if (!spiffs_ok)
+    {
         display_policy_set_manual_screen_active(true);
         try_show_spiffs_recovery_screen(spiffs_err);
-        if (scheduler_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: scheduler unavailable");
+        if (scheduler_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: scheduler unavailable");
         weather_set_quick_refresh_network_allowed(true);
-        if (weather_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: weather unavailable");
-        if (clock_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: clock unavailable");
-        if (message_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: message board unavailable");
-        if (canvas_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: canvas unavailable");
-        if (calendar_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: calendar unavailable");
-        if (timetable_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: timetable unavailable");
-        if (todo_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: todo unavailable");
-        if (countdown_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: countdown unavailable");
-        if (news_feed_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: news unavailable");
+        if (weather_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: weather unavailable");
+        if (clock_display_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: clock unavailable");
+        if (message_board_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: message board unavailable");
+        if (canvas_board_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: canvas unavailable");
+        if (calendar_display_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: calendar unavailable");
+        if (timetable_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: timetable unavailable");
+        if (todo_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: todo unavailable");
+        if (countdown_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: countdown unavailable");
+        if (news_feed_init() != ESP_OK)
+            ESP_LOGW(TAG, "Diagnostic init: news unavailable");
         ESP_LOGW(TAG, "SPIFFS diagnostic mode: content display and sleep arming are disabled");
         ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
                  device_identity_get_mdns_hostname());
@@ -756,7 +857,8 @@ static void full_boot(void)
     }
 
     esp_err_t epd_err = epd_init();
-    if (epd_err != ESP_OK) {
+    if (epd_err != ESP_OK)
+    {
         ESP_LOGE(TAG, "EPD init failed (%s); keeping AP/Web online for diagnostics",
                  esp_err_to_name(epd_err));
     }
@@ -778,15 +880,21 @@ static void full_boot(void)
         int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
                                              DISPLAY_MODE_NEWS + 1,
                                              &write_mode_back);
-        if (!full_boot_should_prefetch_weather(boot_mode)) {
-            if (boot_mode == DISPLAY_MODE_WEATHER) {
+        if (!full_boot_should_prefetch_weather(boot_mode))
+        {
+            if (boot_mode == DISPLAY_MODE_WEATHER)
+            {
                 ESP_LOGI(TAG, "Boot target is weather; deferring weather fetch to page render");
-            } else {
+            }
+            else
+            {
                 ESP_LOGI(TAG, "Boot target %s does not need startup weather fetch",
                          mode_name_for_log(boot_mode));
             }
             weather_skip_initial_task_fetch_once();
-        } else {
+        }
+        else
+        {
             ESP_LOGI(TAG, "Boot target %s uses embedded weather; startup weather prefetch allowed",
                      mode_name_for_log(boot_mode));
         }
@@ -798,9 +906,12 @@ static void full_boot(void)
 
     register_display_modes();
 
-    if (epd_err == ESP_OK) {
+    if (epd_err == ESP_OK)
+    {
         boot_display_route();
-    } else {
+    }
+    else
+    {
         ESP_LOGW(TAG, "Skipping boot display because EPD is not ready");
     }
     scheduler_boot_complete();
@@ -808,8 +919,10 @@ static void full_boot(void)
     ESP_ERROR_CHECK(button_init());
 
     const esp_partition_t *running = esp_ota_get_running_partition();
-    if (running) {
-        if (running->subtype != ESP_PARTITION_SUBTYPE_APP_FACTORY) {
+    if (running)
+    {
+        if (running->subtype != ESP_PARTITION_SUBTYPE_APP_FACTORY)
+        {
             esp_ota_mark_app_valid_cancel_rollback();
             ESP_LOGI(TAG, "OTA firmware validated (rollback cancelled)");
         }
@@ -824,7 +937,8 @@ static void full_boot(void)
      * 使用网页配置的响度和很短的 50ms 鸣叫，既能听清，又尽量省电、少扰人。
      * 这里使用非阻塞接口，所以蜂鸣期间不会卡住 Web 服务或墨水屏任务。
      */
-    if (buzzer_is_initialized() && buzzer_event_is_enabled(BUZZER_EVENT_STARTUP)) {
+    if (buzzer_is_initialized() && buzzer_event_is_enabled(BUZZER_EVENT_STARTUP))
+    {
         esp_err_t beep_err = buzzer_beep_event(BUZZER_EVENT_STARTUP,
                                                4200, 2, 50, 80);
         if (beep_err != ESP_OK)
@@ -840,11 +954,18 @@ static void full_boot(void)
 
 void app_main(void)
 {
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    ESP_LOGW(TAG, "Boot reset reason: %s (%d)",
+             reset_reason_name(reset_reason), (int)reset_reason);
+
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
-    } else {
+    }
+    else
+    {
         ESP_ERROR_CHECK(err);
     }
     ESP_ERROR_CHECK(nvs_utils_init());
@@ -861,18 +982,23 @@ void app_main(void)
      * 冷启动、复位或实体按键唤醒属于正常启动，才启用声音提示。
      */
     const bool timer_wake = power_mgr_is_timer_wake();
-    if (!timer_wake) {
+    if (!timer_wake)
+    {
         esp_err_t buzzer_err = buzzer_init();
-        if (buzzer_err != ESP_OK) {
+        if (buzzer_err != ESP_OK)
+        {
             ESP_LOGW(TAG, "Buzzer unavailable (check GPIO17): %s",
                      esp_err_to_name(buzzer_err));
         }
     }
 
-    if (timer_wake) {
+    if (timer_wake)
+    {
         ESP_LOGI(TAG, "Boot route: low-power timer wake -> quick refresh");
         quick_refresh_and_sleep();
-    } else {
+    }
+    else
+    {
         ESP_LOGI(TAG, "Boot route: normal boot/button wake -> full backend startup");
         full_boot();
     }
