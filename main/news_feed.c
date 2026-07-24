@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -337,8 +338,17 @@ static char *news_http_get(const char *url)
     if (!url_looks_http(url))
         return NULL;
 
+    /*
+     * 新闻 JSON、TLS 和 cJSON 会在同一时刻占用内存。响应缓冲优先放到
+     * PSRAM，避免 12KB 大块挤占内部 RAM，降低联网刷新时卡死或复位概率。
+     */
+    char *response = heap_caps_malloc(NEWS_HTTP_MAX_BYTES,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!response)
+        response = malloc(NEWS_HTTP_MAX_BYTES);
+
     news_resp_buf_t rb = {
-        .buf = malloc(NEWS_HTTP_MAX_BYTES),
+        .buf = response,
         .len = 0,
         .cap = NEWS_HTTP_MAX_BYTES,
         .overflow = false,
@@ -926,7 +936,8 @@ static void set_user_busy_window_us(int64_t duration_us)
     portEXIT_CRITICAL(&s_mux);
 }
 
-static esp_err_t queue_render(int flags, unsigned *out_epoch, bool allow_pending)
+static esp_err_t queue_render(int flags, unsigned *out_epoch,
+                              bool allow_pending, bool claim_display)
 {
     if (!s_render_mutex)
         return ESP_ERR_INVALID_STATE;
@@ -934,10 +945,17 @@ static esp_err_t queue_render(int flags, unsigned *out_epoch, bool allow_pending
     if (!allow_pending && user_busy_window_active())
         return ESP_ERR_INVALID_STATE;
 
+    /*
+     * 后台新闻翻页只能更新当前新闻画面，不能创建新的用户显示请求。
+     * 这条检查可以防止它在图片转换期间抢走画廊、天气等页面的显示权。
+     */
+    if (!claim_display && display_mode_active() != DISPLAY_MODE_NEWS)
+        return ESP_ERR_INVALID_STATE;
+
     if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
         if (!allow_pending)
             return ESP_ERR_INVALID_STATE;
-        unsigned epoch = display_policy_begin_manual_display();
+        unsigned epoch = display_policy_display_epoch();
         if (out_epoch)
             *out_epoch = epoch;
         atomic_store(&s_pending_epoch, epoch);
@@ -946,7 +964,14 @@ static esp_err_t queue_render(int flags, unsigned *out_epoch, bool allow_pending
         return ESP_OK;
     }
 
-    unsigned epoch = display_policy_begin_manual_display();
+    /*
+     * 网页“立即刷新”是新的用户请求；模式回调和后台翻页则沿用调用方
+     * 已经建立的 epoch，避免同一次操作被重复计数或取消其他页面。
+     */
+    unsigned epoch = claim_display ? display_policy_begin_manual_display()
+                                   : display_policy_display_epoch();
+    if (!claim_display)
+        epd_request_full_refresh_next();
     if (out_epoch)
         *out_epoch = epoch;
 
@@ -964,17 +989,17 @@ static esp_err_t queue_render(int flags, unsigned *out_epoch, bool allow_pending
 
 esp_err_t news_feed_show(void)
 {
-    return queue_render(0, NULL, true);
+    return queue_render(0, NULL, true, false);
 }
 
 esp_err_t news_feed_show_next(void)
 {
-    return queue_render(NEWS_RENDER_ADVANCE, NULL, true);
+    return queue_render(NEWS_RENDER_ADVANCE, NULL, true, false);
 }
 
 esp_err_t news_feed_refresh_and_show(void)
 {
-    return queue_render(NEWS_RENDER_FORCE_FETCH, NULL, false);
+    return queue_render(NEWS_RENDER_FORCE_FETCH, NULL, false, true);
 }
 
 static void news_task(void *arg)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "2.3.5")
+set(PROJECT_VER "2.3.6")
 
 # Fresh source archives do not include the local sdkconfig file. Without an
 # explicit target, ESP-IDF defaults to esp32 and then S3-only GPIO/USB headers

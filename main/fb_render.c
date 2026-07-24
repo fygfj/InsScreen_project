@@ -72,6 +72,14 @@ void fb_raw_file_lock(void)
         xSemaphoreTake(m, portMAX_DELAY);
 }
 
+bool fb_raw_file_lock_timeout(uint32_t timeout_ms)
+{
+    SemaphoreHandle_t m = raw_file_mutex_get();
+    if (!m)
+        return false;
+    return xSemaphoreTake(m, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
 void fb_raw_file_unlock(void)
 {
     SemaphoreHandle_t m = s_raw_file_mutex;

@@ -36,6 +36,11 @@ void        fb_reserve_planes_early(void);
 /** 切换面板类型时释放预留（由 epd_set_panel 调用） */
 void        fb_release_reserved_planes(void);
 void        fb_raw_file_lock(void);
+/**
+ * 在限定时间内申请 image.bin 文件锁。
+ * HTTP 请求应优先使用这个接口，避免另一个异常任务把网页永久卡住。
+ */
+bool        fb_raw_file_lock_timeout(uint32_t timeout_ms);
 void        fb_raw_file_unlock(void);
 
 fb_t       *fb_create(void);

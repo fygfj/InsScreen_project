@@ -32,6 +32,10 @@
 static const char *TAG = "http_gal";
 static atomic_bool s_upload_active;
 
+/* HTTP 显示请求必须有上限，异常显示任务不能无限占住网页工作线程。 */
+#define GALLERY_EPD_WAIT_MS       30000
+#define GALLERY_RAW_LOCK_WAIT_MS  10000
+
 static esp_err_t gallery_send_empty(httpd_req_t *req, bool spiffs_ok)
 {
     char json[48];
@@ -65,9 +69,15 @@ static unsigned gallery_upload_epoch(void)
     return atomic_load(&s_upload_epoch);
 }
 
-static void gallery_restore_manual_if_current(bool was_manual, unsigned display_epoch)
+static void gallery_restore_display_state_if_current(int previous_mode,
+                                                     bool was_manual,
+                                                     unsigned display_epoch)
 {
-    if (!was_manual && display_policy_epoch_is_current(display_epoch))
+    if (!display_policy_epoch_is_current(display_epoch))
+        return;
+
+    display_mode_set_active(previous_mode);
+    if (!was_manual)
         display_policy_set_manual_screen_active(false);
 }
 
@@ -617,10 +627,30 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
 
     bool was_manual = display_policy_manual_screen_active();
+    int previous_mode = display_mode_active();
+    /*
+     * 用户点击图片后立即切换显示所有权。图片转换可能需要几秒，若等到
+     * 刷屏成功后才切换，新闻后台任务会在这段时间插队并取消本次请求。
+     */
+    display_mode_set_active(DISPLAY_MODE_SLIDESHOW);
     unsigned display_epoch = display_policy_begin_manual_display();
 
+    if (!epd_wait_idle(GALLERY_EPD_WAIT_MS)) {
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "墨水屏仍被上一个任务占用，请稍后再试");
+        return ESP_OK;
+    }
+
     const char *raw_path = "/spiffs/image.bin";
-    fb_raw_file_lock();
+    if (!fb_raw_file_lock_timeout(GALLERY_RAW_LOCK_WAIT_MS)) {
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "图片处理任务繁忙，请稍后再试");
+        return ESP_OK;
+    }
     if (gallery_upload_busy() || gallery_upload_epoch() != upload_epoch ||
         !display_policy_epoch_is_current(display_epoch)) {
         fb_raw_file_unlock();
@@ -644,7 +674,8 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
     fb_raw_file_unlock();
     if (cerr != ESP_OK) {
-            gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图片转换失败");
         return ESP_OK;
     }
@@ -662,7 +693,8 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
     if (derr != ESP_OK) {
         (void)buzzer_beep_event(BUZZER_EVENT_DISPLAY_ERROR, 1800, 3, 70, 90);
-            gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "墨水屏刷新失败");
         return ESP_OK;
     }
@@ -749,13 +781,17 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
 
     unsigned upload_epoch = gallery_upload_begin();
     bool was_manual = display_policy_manual_screen_active();
+    int previous_mode = display_mode_active();
+    /* 上传也是用户显示操作，从接收文件开始就阻止后台新闻抢占。 */
+    display_mode_set_active(DISPLAY_MODE_SLIDESHOW);
     unsigned display_epoch = display_policy_begin_manual_display();
 
     FILE *f = fopen(http_app_cfg.upload_path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "fopen(%s) failed: errno=%d", http_app_cfg.upload_path, errno);
         gallery_upload_end(upload_epoch);
-            gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "文件打开失败");
         return ESP_OK;
     }
@@ -772,7 +808,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+            gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                     display_epoch);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收数据失败");
             return ESP_OK;
         }
@@ -780,7 +817,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+            gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                     display_epoch);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "客户端断开连接");
             return ESP_OK;
         }
@@ -795,7 +833,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+            gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                     display_epoch);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写入失败");
             return ESP_OK;
         }
@@ -861,7 +900,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     if (!copy_ok) {
         remove(final_path);
         gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "图库保存失败");
         return ESP_OK;
     }
@@ -871,12 +911,29 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
 
     if (!http_require_epd_ready(req)) {
         gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
+        return ESP_OK;
+    }
+
+    if (!epd_wait_idle(GALLERY_EPD_WAIT_MS)) {
+        gallery_upload_end(upload_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "图片已保存，但墨水屏仍被上一个任务占用");
         return ESP_OK;
     }
 
     const char *raw_path = "/spiffs/image.bin";
-    fb_raw_file_lock();
+    if (!fb_raw_file_lock_timeout(GALLERY_RAW_LOCK_WAIT_MS)) {
+        gallery_upload_end(upload_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_sendstr(req, "图片已保存，但图片处理任务繁忙");
+        return ESP_OK;
+    }
     if (!display_policy_epoch_is_current(display_epoch) ||
         gallery_upload_epoch() != upload_epoch) {
         fb_raw_file_unlock();
@@ -891,7 +948,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         fb_raw_file_unlock();
         remove(final_path);
         gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                             "图片转换失败：请上传标准的 JPEG、PNG 或 BMP 图片");
         return ESP_OK;
@@ -929,7 +987,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     if (derr != ESP_OK) {
         ESP_LOGW(TAG, "EPD display failed: %s", esp_err_to_name(derr));
         gallery_upload_end(upload_epoch);
-        gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_restore_display_state_if_current(previous_mode, was_manual,
+                                                 display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "图片已转换但墨水屏刷新失败");
         return ESP_OK;

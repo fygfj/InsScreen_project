@@ -1163,13 +1163,28 @@ async function upload(){
   document.getElementById('up').disabled=false;
 }
 
+let galleryShowBusy=false;
 async function showImg(name){
+  if(galleryShowBusy){log('上一张图片仍在处理中，请等待完成。','bad');return;}
+  galleryShowBusy=true;
+  const buttons=Array.from(document.querySelectorAll('[data-show-image]'));
+  buttons.forEach(b=>b.disabled=true);
+  const ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+  const timer=ctrl?setTimeout(()=>ctrl.abort(),70000):0;
   log('⏳ 正在转换并显示 '+name+'，墨水屏刷新约需 15-20 秒…');
   try{
-    const r=await fetch('/show?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
+    const opts={method:'POST'};
+    if(ctrl)opts.signal=ctrl.signal;
+    const r=await fetch('/show?name='+encodeURIComponent(name),epdFetchOpts(opts));
     const t=await r.text();
     log(r.ok?'✅ 显示成功':'❌ '+t,(r.ok?'ok':'bad'));
-  }catch(e){log('显示失败：'+e,'bad');}
+  }catch(e){
+    log(e&&e.name==='AbortError'?'显示超时，网页已停止等待，请检查屏幕 BUSY 配置。':'显示失败：'+e,'bad');
+  }finally{
+    if(timer)clearTimeout(timer);
+    galleryShowBusy=false;
+    buttons.forEach(b=>b.disabled=false);
+  }
 }
 
 async function delImg(name){
@@ -1231,7 +1246,7 @@ async function loadGallery(){
       <div class="gthumb"><img data-name="${i.name}" loading="lazy" alt="${i.name}"><div class="ph">缩略图加载中…</div></div>
       <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
       <div class="gactions wrap">
-        <button class="btn sm" onclick="showImg('${i.name}')">显示</button>
+        <button class="btn sm" data-show-image onclick="showImg('${i.name}')">显示</button>
         <button class="btn ghost sm" onclick="delImg('${i.name}')">删除</button>
         <button class="btn ghost sm" onclick="backupImgToSd('${i.name}')">备份SD</button>
       </div></div>`).join('');
