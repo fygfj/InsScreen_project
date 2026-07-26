@@ -257,6 +257,23 @@ static void weather_disable_if_enabled_for_image_focus(void)
     /* Kept as a call-site marker; do not disable the user's weather configuration here. */
 }
 
+/**
+ * 图片显示成功后的统一收尾。
+ * 轮播开启时解除“手动画面”标记，让定时任务从当前图片重新计时；
+ * 轮播关闭时继续保持手动画面，避免天气或时钟自动盖掉用户刚选的图片。
+ */
+static void gallery_complete_manual_show(const char *name)
+{
+    scheduler_set_current_image_name(name);
+    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+
+    slideshow_config_t cfg = {0};
+    bool slideshow_enabled = scheduler_get_config(&cfg) == ESP_OK && cfg.enabled;
+    display_policy_set_manual_screen_active(!slideshow_enabled);
+    scheduler_notify_manual_show();
+}
+
 static bool gallery_needs_precise_image_clear(void)
 {
     return epd_get_panel() == EPD_PANEL_ATC_SSD1619_29_BWR;
@@ -704,12 +721,9 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "gallery show superseded");
         return ESP_OK;
     }
-    scheduler_set_current_image_name(name);
     /* 手动画面由 display_policy 控制，避免后台天气/时钟继续写 image.bin 抢屏。 */
     weather_disable_if_enabled_for_image_focus();
-    scheduler_notify_manual_show();
-    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
-    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+    gallery_complete_manual_show(name);
     (void)buzzer_beep_event(BUZZER_EVENT_CONTENT, 4200, 2, 45, 60);
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
@@ -1002,11 +1016,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "upload display superseded");
         return ESP_OK;
     }
-    scheduler_set_current_image_name(name);
     weather_disable_if_enabled_for_image_focus();
-    scheduler_notify_manual_show();
-    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
-    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+    gallery_complete_manual_show(name);
     gallery_upload_end(upload_epoch);
     httpd_resp_sendstr(req, "OK — 已转换并触发墨水屏刷新。");
     return ESP_OK;

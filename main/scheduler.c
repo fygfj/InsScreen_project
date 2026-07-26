@@ -31,6 +31,7 @@ static const char *NVS_NS     = "slideshow";
 #define BIT_CFG_CHANGED   BIT0
 #define BIT_MANUAL_SHOW   BIT1
 #define BIT_BOOT_COMPLETE BIT2
+#define BIT_SHOW_NOW      BIT3
 #define MAX_GALLERY      32
 
 static slideshow_config_t s_config = {
@@ -220,6 +221,8 @@ static void show_next_image(void)
     }
 
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+    /* 第一张真正上屏成功后再记住轮播模式，空画廊不会污染下次启动模式。 */
+    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
 
     /* 顺序模式：仅在转换+刷屏均成功后再前进索引并落盘，避免失败时跳过画廊项 */
     if (mode != SLIDESHOW_RANDOM) {
@@ -255,12 +258,14 @@ static void slideshow_task(void *arg)
         portEXIT_CRITICAL(&s_cfg_mux);
 
         if (!snap.enabled) {
-            xEventGroupWaitBits(s_event, BIT_CFG_CHANGED,
-                                pdTRUE, pdFALSE, portMAX_DELAY);
+            EventBits_t bits = xEventGroupWaitBits(
+                s_event, BIT_CFG_CHANGED | BIT_SHOW_NOW,
+                pdTRUE, pdFALSE, portMAX_DELAY);
             portENTER_CRITICAL(&s_cfg_mux);
             snap = s_config;
             portEXIT_CRITICAL(&s_cfg_mux);
-            if (snap.enabled && !display_policy_manual_screen_active()) {
+            if (snap.enabled && (bits & BIT_SHOW_NOW) &&
+                !display_policy_manual_screen_active()) {
                 ESP_LOGI(TAG, "Slideshow enabled, showing first image now");
                 show_next_image();
             }
@@ -275,18 +280,21 @@ static void slideshow_task(void *arg)
         }
 
         EventBits_t bits = xEventGroupWaitBits(
-            s_event, BIT_CFG_CHANGED | BIT_MANUAL_SHOW,
+            s_event, BIT_CFG_CHANGED | BIT_MANUAL_SHOW | BIT_SHOW_NOW,
             pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
 
-        if (bits & BIT_CFG_CHANGED) {
+        if (bits & BIT_SHOW_NOW) {
             portENTER_CRITICAL(&s_cfg_mux);
             snap = s_config;
             portEXIT_CRITICAL(&s_cfg_mux);
-            if (snap.enabled && s_current_image[0] == '\0' &&
-                !display_policy_manual_screen_active()) {
-                ESP_LOGI(TAG, "Config changed, showing first slideshow image");
+            if (snap.enabled && !display_policy_manual_screen_active()) {
+                ESP_LOGI(TAG, "Slideshow start requested, showing image now");
                 show_next_image();
             }
+            continue;
+        }
+        if (bits & BIT_CFG_CHANGED) {
+            /* 普通参数修改只重新开始计时，不额外刷新屏幕。 */
             continue;
         }
         if (bits & BIT_MANUAL_SHOW) continue;
@@ -352,13 +360,20 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
     portENTER_CRITICAL(&s_cfg_mux);
     bool slideshow_was_on = s_config.enabled;
     s_config = *cfg;
+    bool slideshow_started = !slideshow_was_on && s_config.enabled;
     bool slideshow_stopped = slideshow_was_on && !s_config.enabled;
     portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
 
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",
              s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
-    /* Enabling slideshow config no longer changes last_mode; explicit image show does. */
+    /*
+     * 用户打开轮播就表示把屏幕交给画廊：立即切到轮播模式并显示第一张，
+     * 不再要求用户另外回到上传页手动点一次“显示”。
+     */
+    if (slideshow_started) {
+        display_policy_set_manual_screen_active(false);
+    }
     if (slideshow_stopped && display_mode_active() == DISPLAY_MODE_SLIDESHOW) {
         clock_config_t cc;
         if (clock_display_get_config(&cc) == ESP_OK && cc.enabled) {
@@ -368,8 +383,12 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
         }
     }
     /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
-    if (s_event)
-        xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
+    if (s_event) {
+        EventBits_t bits = BIT_CFG_CHANGED;
+        if (slideshow_started)
+            bits |= BIT_SHOW_NOW;
+        xEventGroupSetBits(s_event, bits);
+    }
     clock_display_notify_home_changed();
     if (slideshow_stopped)
         weather_notify_slideshow_stopped();

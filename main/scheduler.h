@@ -11,7 +11,7 @@ typedef enum {
 
 typedef struct {
     bool              enabled;
-    uint32_t          interval_sec;   /* 300 ~ 86400 */
+    uint32_t          interval_sec;   /* 60 ~ 86400 */
     slideshow_mode_t  mode;
     bool              clock_overlay;  /* show time in corner */
 } slideshow_config_t;

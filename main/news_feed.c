@@ -437,12 +437,17 @@ static bool parse_news_json(const char *json, news_feed_data_t *out)
 {
     if (!json || !out) return false;
 
+    /*
+     * out 由调用方放在 PSRAM 中。直接在这块临时对象里解析，避免函数栈上
+     * 再创建一份约 3.2KB 的新闻数组；后台新闻任务只有 6KB 栈，旧写法在
+     * cJSON 解析时会同时保留两份数组，可能触发栈溢出并导致设备复位。
+     */
+    memset(out, 0, sizeof(*out));
+    snprintf(out->page_title, sizeof(out->page_title), "热点资讯");
+
     cJSON *root = cJSON_Parse(json);
     if (!root)
         return false;
-
-    news_feed_data_t data = {0};
-    snprintf(data.page_title, sizeof(data.page_title), "热点资讯");
 
     cJSON *arr = NULL;
     if (cJSON_IsArray(root)) {
@@ -451,9 +456,9 @@ static bool parse_news_json(const char *json, news_feed_data_t *out)
         const char *title = cJSON_GetStringValue(cJSON_GetObjectItem(root, "title"));
         const char *updated = json_string_any(root, "updated_at", "update_time", "time");
         if (title && title[0])
-            snprintf(data.page_title, sizeof(data.page_title), "%s", title);
+            snprintf(out->page_title, sizeof(out->page_title), "%s", title);
         if (updated && updated[0])
-            snprintf(data.updated_at, sizeof(data.updated_at), "%s", updated);
+            snprintf(out->updated_at, sizeof(out->updated_at), "%s", updated);
         arr = cJSON_GetObjectItem(root, "items");
         if (!cJSON_IsArray(arr))
             arr = cJSON_GetObjectItem(root, "news");
@@ -466,7 +471,7 @@ static bool parse_news_json(const char *json, news_feed_data_t *out)
                 if (!updated)
                     updated = cJSON_GetStringValue(cJSON_GetObjectItem(result, "date"));
                 if (updated && updated[0])
-                    snprintf(data.updated_at, sizeof(data.updated_at), "%s", updated);
+                    snprintf(out->updated_at, sizeof(out->updated_at), "%s", updated);
             }
         }
     }
@@ -482,7 +487,7 @@ static bool parse_news_json(const char *json, news_feed_data_t *out)
 
     for (int i = 0; i < count; i++) {
         cJSON *it = cJSON_GetArrayItem(arr, i);
-        news_feed_item_t *dst = &data.items[data.item_count];
+        news_feed_item_t *dst = &out->items[out->item_count];
 
         if (cJSON_IsString(it)) {
             snprintf(dst->title, sizeof(dst->title), "%s", it->valuestring);
@@ -522,18 +527,17 @@ static bool parse_news_json(const char *json, news_feed_data_t *out)
         clean_text(dst->time);
 
         if (dst->title[0])
-            data.item_count++;
+            out->item_count++;
     }
 
     cJSON_Delete(root);
 
-    if (data.item_count <= 0)
+    if (out->item_count <= 0)
         return false;
-    if (!data.updated_at[0] && data.items[0].time[0])
-        snprintf(data.updated_at, sizeof(data.updated_at), "%s", data.items[0].time);
-    data.valid = true;
-    data.current_index = 0;
-    *out = data;
+    if (!out->updated_at[0] && out->items[0].time[0])
+        snprintf(out->updated_at, sizeof(out->updated_at), "%s", out->items[0].time);
+    out->valid = true;
+    out->current_index = 0;
     return true;
 }
 
@@ -801,10 +805,25 @@ static esp_err_t news_feed_fetch_now_wait(uint32_t wait_ms)
         return ESP_FAIL;
     }
 
-    news_feed_data_t parsed;
-    bool ok = parse_news_json(json, &parsed);
+    /*
+     * 新闻数据约 3.2KB，优先放到 PSRAM 后再解析。即使 PSRAM 暂时申请
+     * 失败，也只回退到普通堆，不能再把这个大对象放回任务栈。
+     */
+    news_feed_data_t *parsed = heap_caps_calloc(
+        1, sizeof(*parsed), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!parsed)
+        parsed = calloc(1, sizeof(*parsed));
+    if (!parsed) {
+        free(json);
+        xSemaphoreGive(s_fetch_mutex);
+        ESP_LOGE(TAG, "news data allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    bool ok = parse_news_json(json, parsed);
     free(json);
     if (!ok) {
+        free(parsed);
         xSemaphoreGive(s_fetch_mutex);
         return ESP_FAIL;
     }
@@ -815,16 +834,19 @@ static esp_err_t news_feed_fetch_now_wait(uint32_t wait_ms)
      * 自动轮播将永远只能看到第一页。
      */
     int old_page = s_data.current_index / per_page;
-    int page_count = (parsed.item_count + per_page - 1) / per_page;
+    int page_count = (parsed->item_count + per_page - 1) / per_page;
     if (old_page >= page_count)
         old_page = 0;
-    parsed.current_index = old_page * per_page;
-    s_data = parsed;
+    parsed->current_index = old_page * per_page;
+    s_data = *parsed;
     s_last_fetch_us = esp_timer_get_time();
     portEXIT_CRITICAL(&s_mux);
 
+    int item_count = parsed->item_count;
+    free(parsed);
     xSemaphoreGive(s_fetch_mutex);
-    ESP_LOGI(TAG, "Fetched %d news items", parsed.item_count);
+    ESP_LOGI(TAG, "Fetched %d news items, stack free=%u bytes",
+             item_count, (unsigned)uxTaskGetStackHighWaterMark(NULL));
     return ESP_OK;
 }
 
@@ -850,7 +872,7 @@ static bool data_needs_fetch(const news_feed_config_t *cfg)
     if (!valid || item_count <= 0)
         return true;
     int64_t age_us = esp_timer_get_time() - last;
-    return age_us > (int64_t)cfg->refresh_sec * 1000000LL;
+    return age_us >= (int64_t)cfg->refresh_sec * 1000000LL;
 }
 
 static int news_items_per_page(int width, int height)
@@ -1005,15 +1027,19 @@ esp_err_t news_feed_refresh_and_show(void)
 static void news_task(void *arg)
 {
     (void)arg;
+    uint32_t retry_wait_ms = 0;
     for (;;) {
         news_feed_config_t cfg;
         portENTER_CRITICAL(&s_mux);
         cfg = s_cfg;
         portEXIT_CRITICAL(&s_mux);
 
-        uint32_t wait_ms = 10000;
-        if (cfg.enabled && cfg.refresh_sec > 0)
+        uint32_t wait_ms = retry_wait_ms;
+        retry_wait_ms = 0;
+        if (wait_ms == 0 && cfg.enabled && cfg.refresh_sec > 0)
             wait_ms = cfg.refresh_sec * 1000UL;
+        if (wait_ms == 0)
+            wait_ms = 10000;
 
         if (s_task_wakeup)
             xSemaphoreTake(s_task_wakeup, pdMS_TO_TICKS(wait_ms));
@@ -1028,8 +1054,20 @@ static void news_task(void *arg)
         if (display_policy_boot_display_active())
             continue;
 
-        if (data_needs_fetch(&cfg))
-            (void)news_feed_fetch_now();
+        if (data_needs_fetch(&cfg)) {
+            esp_err_t fetch_err = news_feed_fetch_now();
+            if (fetch_err != ESP_OK) {
+                /*
+                 * 接口暂时失败时保留旧新闻继续显示，并在最多 60 秒后重试。
+                 * 这样不会因为一次断网而继续使用旧内容一整个长刷新周期。
+                 */
+                uint32_t normal_wait_ms = cfg.refresh_sec * 1000UL;
+                retry_wait_ms = normal_wait_ms < 60000 ? normal_wait_ms : 60000;
+                ESP_LOGW(TAG, "News refresh failed (%s), keeping cache and retrying in %lus",
+                         esp_err_to_name(fetch_err),
+                         (unsigned long)(retry_wait_ms / 1000UL));
+            }
+        }
 
         if (!display_policy_boot_display_active() &&
             display_mode_active() == DISPLAY_MODE_NEWS)
@@ -1115,6 +1153,13 @@ esp_err_t news_feed_set_config(const news_feed_config_t *cfg)
              next.enabled ? 1 : 0, next.api_key[0] ? 1 : 0,
              (unsigned)strlen(next.source_url),
              (unsigned long)next.refresh_sec);
+
+    /*
+     * 后台任务可能还在按旧刷新间隔睡眠。保存配置后立即唤醒它，
+     * 让新的 API Key、分类、数量和刷新周期马上生效，而不是等旧周期结束。
+     */
+    if (s_task_wakeup)
+        xSemaphoreGive(s_task_wakeup);
 
     return ESP_OK;
 }
