@@ -1,8 +1,9 @@
 /**
  * @file button.c
  *
- * Polling-based button driver with debounce.
- * Directly switches display modes: SW3=prev, SW5=next, SW4=refresh.
+ * Polling-based encoder driver with debounce.
+ * Rotary encoder keeps the old actions: turn left/right = prev/next,
+ * press = refresh.
  *
  * Architecture: lightweight button_task (2.5KB) polls GPIOs and posts
  * commands to display_worker_task (10KB).
@@ -15,7 +16,6 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 
-#include "battery_mon.h"
 #include "buzzer.h"
 #include "calendar_display.h"
 #include "display_mode.h"
@@ -32,17 +32,16 @@
 
 static const char *TAG = "button";
 
-/* Schematic: SW3->GPIO9(prev), SW4->GPIO46(refresh), SW5->GPIO3(next), 10k pulldown. */
-#define BTN_LEFT    GPIO_NUM_9
-#define BTN_MID     GPIO_NUM_46
-#define BTN_RIGHT   GPIO_NUM_3
+/* Schematic 2026-08-05: encoder A=GPIO4, B=GPIO18, switch=GPIO0, active-low. */
+#define ENC_A       GPIO_NUM_4
+#define ENC_B       GPIO_NUM_18
+#define ENC_SW      GPIO_NUM_0
 
-#define BTN_COUNT       3
-#define POLL_MS         20
-#define DEBOUNCE_MS     40
+#define INPUT_COUNT     3
+#define POLL_MS         5
+#define DEBOUNCE_MS     10
 #define DEBOUNCE_TICKS  (DEBOUNCE_MS / POLL_MS)
 #define WORKER_STACK    10240
-#define LOW_BATTERY_WARN_PERCENT 15
 
 typedef enum {
     CMD_NEXT = 0,
@@ -68,8 +67,8 @@ void button_set_current_mode(int mode)
     display_mode_set_active(mode);
 }
 
-static const gpio_num_t btn_pins[BTN_COUNT] = {
-    BTN_LEFT, BTN_MID, BTN_RIGHT,
+static const gpio_num_t input_pins[INPUT_COUNT] = {
+    ENC_A, ENC_B, ENC_SW,
 };
 
 typedef struct {
@@ -77,17 +76,9 @@ typedef struct {
     uint8_t count;
 } debounce_t;
 
-static debounce_t s_db[BTN_COUNT];
-
-static bool low_battery_warning_needed(void)
-{
-    if (!buzzer_event_is_enabled(BUZZER_EVENT_LOW_BATTERY))
-        return false;
-
-    battery_status_t st = {0};
-    battery_mon_get_status(&st);
-    return st.valid && !st.charging && st.percent <= LOW_BATTERY_WARN_PERCENT;
-}
+static debounce_t s_db[INPUT_COUNT];
+static uint8_t s_enc_state;
+static int8_t s_enc_accum;
 
 /* display worker (runs on 10KB stack) */
 
@@ -175,52 +166,80 @@ static void display_worker_task(void *arg)
     }
 }
 
-/* button polling */
+/* encoder polling */
 
-static void on_press(int idx)
+static void post_cmd(btn_cmd_t cmd, const char *label, uint32_t tone_hz)
 {
     power_mgr_reset_activity();
 
     if (s_busy) {
-        ESP_LOGW(TAG, "display busy, press ignored");
+        ESP_LOGW(TAG, "display busy, input ignored");
         return;
     }
 
     if (buzzer_is_initialized()) {
-        static const uint32_t key_tone_hz[BTN_COUNT] = { 3400, 4000, 4600 };
-        if (low_battery_warning_needed()) {
-            (void)buzzer_beep_event(BUZZER_EVENT_LOW_BATTERY,
-                                    2600, 5, 24, 32);
-        } else {
-            (void)buzzer_beep_event(BUZZER_EVENT_KEY,
-                                    key_tone_hz[idx], 1, 30, 0);
-        }
+        (void)tone_hz;
+        (void)buzzer_beep_event(BUZZER_EVENT_KEY, BUZZER_DEFAULT_FREQUENCY_HZ,
+                                1, 30, 0);
     }
 
-    btn_cmd_t cmd;
-    switch (idx) {
-    case 0: cmd = CMD_PREV;    ESP_LOGI(TAG, "SW3 (prev)");    break;
-    case 1: cmd = CMD_REFRESH; ESP_LOGI(TAG, "SW4 (refresh)"); break;
-    case 2: cmd = CMD_NEXT;    ESP_LOGI(TAG, "SW5 (next)");    break;
-    default: return;
-    }
-
+    ESP_LOGI(TAG, "%s", label);
     xQueueOverwrite(s_cmd_queue, &cmd);
 }
 
-static void button_task(void *arg)
+static uint8_t encoder_state_from_db(void)
+{
+    return (uint8_t)((s_db[0].stable ? 2U : 0U) |
+                     (s_db[1].stable ? 1U : 0U));
+}
+
+static void encoder_handle_transition(void)
+{
+    static const int8_t transition[16] = {
+         0, -1,  1,  0,
+         1,  0,  0, -1,
+        -1,  0,  0,  1,
+         0,  1, -1,  0,
+    };
+
+    uint8_t next = encoder_state_from_db();
+    if (next == s_enc_state)
+        return;
+
+    int8_t delta = transition[(s_enc_state << 2) | next];
+    s_enc_state = next;
+
+    if (delta == 0) {
+        s_enc_accum = 0;
+        return;
+    }
+
+    s_enc_accum += delta;
+    if (s_enc_accum >= 4) {
+        s_enc_accum = 0;
+        post_cmd(CMD_NEXT, "encoder next", 4600);
+    } else if (s_enc_accum <= -4) {
+        s_enc_accum = 0;
+        post_cmd(CMD_PREV, "encoder prev", 3400);
+    }
+}
+
+static void input_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        for (int i = 0; i < BTN_COUNT; i++) {
-            int raw = gpio_get_level(btn_pins[i]);
+        for (int i = 0; i < INPUT_COUNT; i++) {
+            int raw = gpio_get_level(input_pins[i]);
             if (raw != s_db[i].stable) {
                 s_db[i].count++;
                 if (s_db[i].count >= DEBOUNCE_TICKS) {
                     s_db[i].stable = raw;
                     s_db[i].count = 0;
-                    if (raw == 1)
-                        on_press(i);
+                    if (i < 2) {
+                        encoder_handle_transition();
+                    } else if (raw == 0) {
+                        post_cmd(CMD_REFRESH, "encoder press refresh", 4000);
+                    }
                 }
             } else {
                 s_db[i].count = 0;
@@ -235,14 +254,14 @@ static void button_task(void *arg)
 esp_err_t button_init(void)
 {
     uint64_t mask = 0;
-    for (int i = 0; i < BTN_COUNT; i++)
-        mask |= (1ULL << btn_pins[i]);
+    for (int i = 0; i < INPUT_COUNT; i++)
+        mask |= (1ULL << input_pins[i]);
 
     gpio_config_t cfg = {
         .pin_bit_mask = mask,
         .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
     esp_err_t err = gpio_config(&cfg);
@@ -251,10 +270,12 @@ esp_err_t button_init(void)
         return err;
     }
 
-    for (int i = 0; i < BTN_COUNT; i++) {
-        s_db[i].stable = gpio_get_level(btn_pins[i]);
+    for (int i = 0; i < INPUT_COUNT; i++) {
+        s_db[i].stable = gpio_get_level(input_pins[i]);
         s_db[i].count = 0;
     }
+    s_enc_state = encoder_state_from_db();
+    s_enc_accum = 0;
 
     s_cmd_queue = xQueueCreate(1, sizeof(btn_cmd_t));
     if (!s_cmd_queue) {
@@ -272,7 +293,7 @@ esp_err_t button_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ok = xTaskCreate(button_task, "btn_poll", 2560, NULL, 5, NULL);
+    ok = xTaskCreate(input_task, "enc_poll", 2560, NULL, 5, NULL);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "poll task create failed");
         if (worker_h) vTaskDelete(worker_h);
@@ -281,7 +302,7 @@ esp_err_t button_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "3 buttons on GPIO %d/%d/%d, %d modes registered",
-             BTN_LEFT, BTN_MID, BTN_RIGHT, display_mode_count());
+    ESP_LOGI(TAG, "encoder on A GPIO%d/B GPIO%d/S GPIO%d (active-low), %d modes registered",
+             ENC_A, ENC_B, ENC_SW, display_mode_count());
     return ESP_OK;
 }

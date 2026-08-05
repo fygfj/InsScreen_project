@@ -47,7 +47,7 @@ static void sd_card_set_io_high_z(void)
         SD_CARD_CLK_GPIO,
         SD_CARD_CMD_GPIO,
         SD_CARD_D0_GPIO,
-        GPIO_NUM_42, /* DAT2 is wired but unused in 1-bit mode. */
+        SD_CARD_D3_GPIO, /* CD/DAT3 is wired but unused in 1-bit mode. */
     };
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         (void)gpio_set_direction(pins[i], GPIO_MODE_DISABLE);

@@ -18,10 +18,12 @@ extern "C" {
 #define SD_CARD_CONFIG_BACKUP_PATH SD_CARD_BACKUP_DIR "/epd_config_backup.json"
 #define SD_CARD_CONFIG_BACKUP_TMP_PATH SD_CARD_BACKUP_DIR "/epd_config_backup.tmp"
 
-#define SD_CARD_PWR_EN_GPIO GPIO_NUM_21
-#define SD_CARD_CLK_GPIO    GPIO_NUM_48
-#define SD_CARD_CMD_GPIO    GPIO_NUM_47
-#define SD_CARD_D0_GPIO     GPIO_NUM_41
+/* 2026-08-05 schematic: SD_VDD_EN is active-low. */
+#define SD_CARD_PWR_EN_GPIO GPIO_NUM_8
+#define SD_CARD_CLK_GPIO    GPIO_NUM_6
+#define SD_CARD_CMD_GPIO    GPIO_NUM_5
+#define SD_CARD_D0_GPIO     GPIO_NUM_7
+#define SD_CARD_D3_GPIO     GPIO_NUM_15
 
 typedef struct {
     bool initialized;

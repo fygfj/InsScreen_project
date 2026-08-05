@@ -37,7 +37,7 @@
 #define BUZZER_NVS_KEY_DISP_ERR  "derr"
 #define BUZZER_NVS_KEY_CONTENT   "content"
 #define BUZZER_NVS_KEY_SLEEP     "sleep"
-#define BUZZER_DEFAULT_VOLUME    40U
+#define BUZZER_DEFAULT_VOLUME    25U
 
 static const char *TAG = "buzzer";
 
@@ -252,6 +252,7 @@ esp_err_t buzzer_start_with_volume(uint32_t frequency_hz,
         return ESP_ERR_INVALID_ARG;
     }
 
+    frequency_hz = BUZZER_DEFAULT_FREQUENCY_HZ;
     esp_err_t err = ledc_set_freq(BUZZER_LEDC_MODE,
                                   BUZZER_LEDC_TIMER,
                                   frequency_hz);

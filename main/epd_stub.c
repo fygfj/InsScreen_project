@@ -30,12 +30,13 @@
 
 /* ── 硬件引脚 ─────────────────────────────────────────────────────── */
 
-#define PIN_EPD_SCK   4
-#define PIN_EPD_MOSI  5
-#define PIN_EPD_DC    7
-#define PIN_EPD_CS    15
-#define PIN_EPD_RST   6
-#define PIN_EPD_BUSY  16
+/* 2026-08-05 schematic: FPC SCL/SDA/CS/DC/RES/BUSY -> GPIO14/13/12/11/21/48. */
+#define PIN_EPD_SCK   14
+#define PIN_EPD_MOSI  13
+#define PIN_EPD_DC    11
+#define PIN_EPD_CS    12
+#define PIN_EPD_RST   21
+#define PIN_EPD_BUSY  48
 
 #define EPD_SPI_HOST      SPI2_HOST
 #define EPD_SPI_HZ        (2 * 1000 * 1000)

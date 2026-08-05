@@ -3,15 +3,12 @@
 #include "esp_err.h"
 
 /**
- * Three physical buttons (TS35CA, active-HIGH with 10k external pull-down):
- *   SW3 = GPIO 9   (left / prev)
- *   SW4 = GPIO 46  (middle / refresh)
- *   SW5 = GPIO 3   (right / next)
+ * Rotary encoder, active-low with external pull-ups:
+ *   A = GPIO4, B = GPIO18, S = GPIO0
  *
- * Display mode cycle:  Clock -> Calendar -> Timetable -> Weather -> Clock ...
- *   Left   (SW3) : previous mode
- *   Middle (SW4) : refresh current mode
- *   Right  (SW5) : next mode
+ * Display mode cycle:
+ *   Rotate left/right : previous/next mode
+ *   Press             : refresh current mode
  */
 
 esp_err_t button_init(void);
