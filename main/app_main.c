@@ -30,6 +30,7 @@
 #include "display_mode.h"
 #include "battery_mon.h"
 #include "buzzer.h"
+#include "speaker_test.h"
 #include "sensor_local.h"
 #include "sd_card.h"
 #include "news_feed.h"
@@ -989,6 +990,13 @@ void app_main(void)
         {
             ESP_LOGW(TAG, "Buzzer unavailable (check GPIO17): %s",
                      esp_err_to_name(buzzer_err));
+        }
+
+        esp_err_t speaker_err = speaker_test_play_startup_tone();
+        if (speaker_err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Speaker test unavailable (check GPIO39/40/41/42): %s",
+                     esp_err_to_name(speaker_err));
         }
     }
 

@@ -42,6 +42,7 @@ idf_component_register(
         "display_mode.c"
         "battery_mon.c"
         "buzzer.c"
+        "speaker_test.c"
         "i2c_bus.c"
         "aht20.c"
         "sensor_local.c"
@@ -79,6 +80,7 @@ idf_component_register(
         esp_adc
         esp_driver_ledc
         esp_driver_i2c
+        esp_driver_i2s
         esp_driver_sdmmc
         fatfs
         sdmmc
