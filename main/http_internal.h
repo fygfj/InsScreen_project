@@ -106,6 +106,8 @@ extern const uint8_t index_html_start[]     asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]       asm("_binary_index_html_end");
 extern const uint8_t config_html_start[]    asm("_binary_config_html_start");
 extern const uint8_t config_html_end[]      asm("_binary_config_html_end");
+extern const uint8_t music_html_start[]     asm("_binary_music_html_start");
+extern const uint8_t music_html_end[]       asm("_binary_music_html_end");
 extern const uint8_t gallery_html_start[]   asm("_binary_gallery_html_start");
 extern const uint8_t gallery_html_end[]     asm("_binary_gallery_html_end");
 extern const uint8_t weather_html_start[]   asm("_binary_weather_html_start");

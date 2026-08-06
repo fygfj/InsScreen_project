@@ -54,6 +54,7 @@ idf_component_register(
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
         "${PROJECT_DIR}/web/config.html"
+        "${PROJECT_DIR}/web/music.html"
         "${PROJECT_DIR}/web/gallery.html"
         "${PROJECT_DIR}/web/weather.html"
         "${PROJECT_DIR}/web/news.html"

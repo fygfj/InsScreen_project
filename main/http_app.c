@@ -473,6 +473,11 @@ static esp_err_t config_get_handler(httpd_req_t *req)
     return http_send_embedded_html(req, config_html_start, config_html_end);
 }
 
+static esp_err_t music_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, music_html_start, music_html_end);
+}
+
 static esp_err_t miaooaim_mark_png_get_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "image/png");
@@ -2467,6 +2472,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         /* core pages */
         { "/",              HTTP_GET,  index_get_handler,          NULL },
         { "/config",        HTTP_GET,  config_get_handler,         NULL },
+        { "/music",         HTTP_GET,  music_page_get_handler,     NULL },
         { "/gallery",       HTTP_GET,  gallery_page_get_handler,   NULL },
         { "/weather",       HTTP_GET,  weather_page_get_handler,   NULL },
         { "/news",          HTTP_GET,  news_page_get_handler,      NULL },
