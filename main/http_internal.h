@@ -172,3 +172,14 @@ esp_err_t feat_countdown_config_get(httpd_req_t *req);
 esp_err_t feat_countdown_config_post(httpd_req_t *req);
 esp_err_t feat_countdown_show_post(httpd_req_t *req);
 esp_err_t feat_calendar_show_post(httpd_req_t *req);
+
+/* music handlers (http_music.c) */
+esp_err_t music_list_get_handler(httpd_req_t *req);
+esp_err_t music_status_get_handler(httpd_req_t *req);
+esp_err_t music_play_post_handler(httpd_req_t *req);
+esp_err_t music_pause_post_handler(httpd_req_t *req);
+esp_err_t music_resume_post_handler(httpd_req_t *req);
+esp_err_t music_stop_post_handler(httpd_req_t *req);
+esp_err_t music_volume_post_handler(httpd_req_t *req);
+esp_err_t music_upload_post_handler(httpd_req_t *req);
+esp_err_t speaker_test_post_handler(httpd_req_t *req);

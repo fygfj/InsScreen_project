@@ -47,6 +47,7 @@
 #include "battery_mon.h"
 #include "ui_theme.h"
 #include "buzzer.h"
+#include "music_player.h"
 #include "sensor_local.h"
 #include "sd_card.h"
 #include "diag_log.h"
@@ -778,6 +779,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
     if (!http_check_basic_auth(req)) return ESP_OK;
+    (void)music_player_stop();
     const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
     if (!update) {
         buzzer_beep_ota_result(false);
@@ -2451,8 +2453,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 8;
     config.send_wait_timeout  = 15;
-    config.max_uri_handlers   = 96;
-    config.stack_size         = 16384;
+    config.max_uri_handlers   = 112;
+    config.stack_size         = 24576;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
 
@@ -2551,6 +2553,15 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/sd_config_backup", HTTP_GET,  sd_config_backup_get_handler,  NULL },
         { "/sd_config_backup", HTTP_POST, sd_config_backup_post_handler, NULL },
         { "/sd_log_export", HTTP_POST, sd_log_export_post_handler, NULL },
+        { "/music_list",   HTTP_GET,  music_list_get_handler,   NULL },
+        { "/music_status", HTTP_GET,  music_status_get_handler, NULL },
+        { "/music_play",   HTTP_POST, music_play_post_handler,   NULL },
+        { "/music_pause",  HTTP_POST, music_pause_post_handler,  NULL },
+        { "/music_resume", HTTP_POST, music_resume_post_handler, NULL },
+        { "/music_stop",   HTTP_POST, music_stop_post_handler,   NULL },
+        { "/music_volume", HTTP_POST, music_volume_post_handler, NULL },
+        { "/music_upload", HTTP_POST, music_upload_post_handler, NULL },
+        { "/speaker_test", HTTP_POST, speaker_test_post_handler, NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },

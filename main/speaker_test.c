@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -31,7 +32,16 @@ static const int16_t s_sine_1khz_16k[16] = {
     0, -4592, -8485, -11087, -12000, -11087, -8485, -4592,
 };
 
-static esp_err_t speaker_test_enable_amp(void)
+static uint8_t speaker_test_clamp_volume(uint8_t volume_percent)
+{
+    if (volume_percent < 1)
+        return 1;
+    if (volume_percent > 100)
+        return 100;
+    return volume_percent;
+}
+
+static esp_err_t speaker_test_set_amp(bool enabled)
 {
     gpio_config_t cfg = {
         .pin_bit_mask = 1ULL << SPK_SD_MODE_GPIO,
@@ -44,27 +54,31 @@ static esp_err_t speaker_test_enable_amp(void)
     if (err != ESP_OK)
         return err;
 
-    return gpio_set_level(SPK_SD_MODE_GPIO, 1);
+    return gpio_set_level(SPK_SD_MODE_GPIO, enabled ? 1 : 0);
 }
 
-static void speaker_test_fill_tone(int16_t *buffer, size_t frames, uint32_t *phase)
+static void speaker_test_fill_tone(int16_t *buffer, size_t frames,
+                                   uint32_t *phase, uint8_t volume_percent)
 {
     for (size_t i = 0; i < frames; ++i)
     {
-        int16_t sample = s_sine_1khz_16k[*phase & 0x0FU];
+        int32_t scaled = ((int32_t)s_sine_1khz_16k[*phase & 0x0FU] *
+                          (int32_t)volume_percent) / 100;
+        int16_t sample = (int16_t)scaled;
         buffer[i * 2] = sample;
         buffer[i * 2 + 1] = sample;
         *phase = (*phase + 1U) & 0x0FU;
     }
 }
 
-esp_err_t speaker_test_play_startup_tone(void)
+esp_err_t speaker_test_play_tone(uint8_t volume_percent)
 {
-    ESP_LOGI(TAG, "Enable amp GPIO%d, play %u Hz I2S beep test on BCLK=%d LRCLK=%d DIN=%d",
-             SPK_SD_MODE_GPIO, SPK_TONE_HZ,
+    volume_percent = speaker_test_clamp_volume(volume_percent);
+    ESP_LOGI(TAG, "Enable amp GPIO%d, play %u Hz I2S test at %u%% on BCLK=%d LRCLK=%d DIN=%d",
+             SPK_SD_MODE_GPIO, SPK_TONE_HZ, (unsigned)volume_percent,
              SPK_BCLK_GPIO, SPK_LRCLK_GPIO, SPK_DIN_GPIO);
 
-    esp_err_t err = speaker_test_enable_amp();
+    esp_err_t err = speaker_test_set_amp(true);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Amp enable failed: %s", esp_err_to_name(err));
@@ -82,6 +96,7 @@ esp_err_t speaker_test_play_startup_tone(void)
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "I2S channel alloc failed: %s", esp_err_to_name(err));
+        (void)speaker_test_set_amp(false);
         return err;
     }
 
@@ -120,7 +135,7 @@ esp_err_t speaker_test_play_startup_tone(void)
             while (frames_left > 0)
             {
                 size_t frames = frames_left > SPK_FRAMES_PER_CHUNK ? SPK_FRAMES_PER_CHUNK : frames_left;
-                speaker_test_fill_tone(samples, frames, &phase);
+                speaker_test_fill_tone(samples, frames, &phase, volume_percent);
 
                 size_t bytes_written = 0;
                 err = i2s_channel_write(tx_chan, samples, frames * 2U * sizeof(samples[0]),
@@ -174,8 +189,12 @@ esp_err_t speaker_test_play_startup_tone(void)
     if (cleanup_err != ESP_OK && err == ESP_OK)
         err = cleanup_err;
 
+    esp_err_t amp_err = speaker_test_set_amp(false);
+    if (amp_err != ESP_OK && err == ESP_OK)
+        err = amp_err;
+
     if (err == ESP_OK)
-        ESP_LOGI(TAG, "Speaker beep test done; GPIO%d left high", SPK_SD_MODE_GPIO);
+        ESP_LOGI(TAG, "Speaker beep test done; GPIO%d left low", SPK_SD_MODE_GPIO);
     else
         ESP_LOGW(TAG, "Speaker test failed: %s", esp_err_to_name(err));
 

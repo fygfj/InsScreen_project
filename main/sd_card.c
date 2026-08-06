@@ -165,6 +165,7 @@ static esp_err_t sd_card_ensure_dirs_locked(void)
         SD_CARD_IMAGES_DIR,
         SD_CARD_BACKUP_DIR,
         SD_CARD_LOGS_DIR,
+        SD_CARD_MUSIC_DIR,
     };
 
     for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {

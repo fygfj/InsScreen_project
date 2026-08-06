@@ -43,6 +43,8 @@ idf_component_register(
         "battery_mon.c"
         "buzzer.c"
         "speaker_test.c"
+        "music_player.c"
+        "http_music.c"
         "i2c_bus.c"
         "aht20.c"
         "sensor_local.c"

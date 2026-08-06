@@ -30,7 +30,7 @@
 #include "display_mode.h"
 #include "battery_mon.h"
 #include "buzzer.h"
-#include "speaker_test.h"
+#include "music_player.h"
 #include "sensor_local.h"
 #include "sd_card.h"
 #include "news_feed.h"
@@ -933,19 +933,6 @@ static void full_boot(void)
     ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
              device_identity_get_mdns_hostname());
 
-    /*
-     * 正常启动全部完成后响两声，告诉用户“系统已经可以使用”。
-     * 使用网页配置的响度和很短的 50ms 鸣叫，既能听清，又尽量省电、少扰人。
-     * 这里使用非阻塞接口，所以蜂鸣期间不会卡住 Web 服务或墨水屏任务。
-     */
-    if (buzzer_is_initialized() && buzzer_event_is_enabled(BUZZER_EVENT_STARTUP))
-    {
-        esp_err_t beep_err = buzzer_beep_event(BUZZER_EVENT_STARTUP,
-                                               4200, 2, 50, 80);
-        if (beep_err != ESP_OK)
-            ESP_LOGW(TAG, "Ready beep unavailable: %s", esp_err_to_name(beep_err));
-    }
-
     esp_err_t arm_err = power_mgr_arm();
     if (arm_err != ESP_OK)
         ESP_LOGW(TAG, "Power manager arm failed: %s", esp_err_to_name(arm_err));
@@ -974,13 +961,14 @@ void app_main(void)
 
     ESP_ERROR_CHECK(power_mgr_init());
     ESP_ERROR_CHECK(sd_card_init());
+    ESP_ERROR_CHECK(music_player_init());
 
     if (battery_mon_init() != ESP_OK)
         ESP_LOGW(TAG, "Battery monitor unavailable (check BAT_DET / ADC pin)");
 
     /*
      * 定时唤醒只负责后台刷新墨水屏，不初始化蜂鸣器，避免设备夜间自动响。
-     * 冷启动、复位或实体按键唤醒属于正常启动，才启用声音提示。
+     * 普通启动只初始化声音驱动，不自动播放；测试音由网页端手动触发。
      */
     const bool timer_wake = power_mgr_is_timer_wake();
     if (!timer_wake)
@@ -992,12 +980,6 @@ void app_main(void)
                      esp_err_to_name(buzzer_err));
         }
 
-        esp_err_t speaker_err = speaker_test_play_startup_tone();
-        if (speaker_err != ESP_OK)
-        {
-            ESP_LOGW(TAG, "Speaker test unavailable (check GPIO39/40/41/42): %s",
-                     esp_err_to_name(speaker_err));
-        }
     }
 
     if (timer_wake)

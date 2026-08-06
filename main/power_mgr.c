@@ -5,6 +5,7 @@
 
 #include "display_mode.h"
 #include "buzzer.h"
+#include "music_player.h"
 #include "epd.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -343,6 +344,7 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
     }
     if (buzzer_is_initialized())
         (void)buzzer_stop();
+    (void)music_player_stop();
     nvs_flush_all();
     esp_err_t sd_err = sd_card_prepare_sleep();
     if (sd_err != ESP_OK) {
