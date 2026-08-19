@@ -517,11 +517,6 @@ static esp_err_t message_page_get_handler(httpd_req_t *req)
     return http_send_embedded_html(req, message_html_start, message_html_end);
 }
 
-static esp_err_t codex_page_get_handler(httpd_req_t *req)
-{
-    return http_send_embedded_html(req, codex_html_start, codex_html_end);
-}
-
 /* timetable/todo/countdown UI handlers moved to http_features.c */
 
 /* 鈹€鈹€ GET /wifi_status 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
@@ -2479,7 +2474,6 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/clock",         HTTP_GET,  clock_page_get_handler,     NULL },
         { "/calendar",      HTTP_GET,  calendar_page_get_handler,  NULL },
         { "/message",       HTTP_GET,  message_page_get_handler,   NULL },
-        { "/codex",         HTTP_GET,  codex_page_get_handler,     NULL },
         { "/favicon.ico",   HTTP_GET,  favicon_get_handler,        NULL },
         { "/miaooaim-mark.png", HTTP_GET, miaooaim_mark_png_get_handler, NULL },
         { "/status",        HTTP_GET,  status_get_handler,         NULL },

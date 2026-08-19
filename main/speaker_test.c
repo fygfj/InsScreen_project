@@ -18,6 +18,7 @@ static const char *TAG = "speaker_test";
 #define SPK_LRCLK_GPIO     GPIO_NUM_40
 #define SPK_DIN_GPIO       GPIO_NUM_41
 #define SPK_SD_MODE_GPIO   GPIO_NUM_42
+#define SPK_VDD_EN_GPIO    GPIO_NUM_16
 
 #define SPK_SAMPLE_RATE_HZ       16000U
 #define SPK_TONE_HZ              1000U
@@ -44,7 +45,7 @@ static uint8_t speaker_test_clamp_volume(uint8_t volume_percent)
 static esp_err_t speaker_test_set_amp(bool enabled)
 {
     gpio_config_t cfg = {
-        .pin_bit_mask = 1ULL << SPK_SD_MODE_GPIO,
+        .pin_bit_mask = (1ULL << SPK_SD_MODE_GPIO) | (1ULL << SPK_VDD_EN_GPIO),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -54,7 +55,10 @@ static esp_err_t speaker_test_set_amp(bool enabled)
     if (err != ESP_OK)
         return err;
 
-    return gpio_set_level(SPK_SD_MODE_GPIO, enabled ? 1 : 0);
+    err = gpio_set_level(SPK_SD_MODE_GPIO, enabled ? 1 : 0);
+    if (err != ESP_OK)
+        return err;
+    return gpio_set_level(SPK_VDD_EN_GPIO, enabled ? 1 : 0);
 }
 
 static void speaker_test_fill_tone(int16_t *buffer, size_t frames,
@@ -74,8 +78,8 @@ static void speaker_test_fill_tone(int16_t *buffer, size_t frames,
 esp_err_t speaker_test_play_tone(uint8_t volume_percent)
 {
     volume_percent = speaker_test_clamp_volume(volume_percent);
-    ESP_LOGI(TAG, "Enable amp GPIO%d, play %u Hz I2S test at %u%% on BCLK=%d LRCLK=%d DIN=%d",
-             SPK_SD_MODE_GPIO, SPK_TONE_HZ, (unsigned)volume_percent,
+    ESP_LOGI(TAG, "Enable amp GPIO%d/GPIO%d, play %u Hz I2S test at %u%% on BCLK=%d LRCLK=%d DIN=%d",
+             SPK_SD_MODE_GPIO, SPK_VDD_EN_GPIO, SPK_TONE_HZ, (unsigned)volume_percent,
              SPK_BCLK_GPIO, SPK_LRCLK_GPIO, SPK_DIN_GPIO);
 
     esp_err_t err = speaker_test_set_amp(true);
@@ -194,7 +198,7 @@ esp_err_t speaker_test_play_tone(uint8_t volume_percent)
         err = amp_err;
 
     if (err == ESP_OK)
-        ESP_LOGI(TAG, "Speaker beep test done; GPIO%d left low", SPK_SD_MODE_GPIO);
+        ESP_LOGI(TAG, "Speaker beep test done; GPIO%d/GPIO%d left low", SPK_SD_MODE_GPIO, SPK_VDD_EN_GPIO);
     else
         ESP_LOGW(TAG, "Speaker test failed: %s", esp_err_to_name(err));
 

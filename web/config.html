@@ -1642,11 +1642,11 @@ body.config-page{
 .config-page .nav a[href="/message"]::before{content:"\1F4AC"}
 .config-page .nav a[href="/board"]::before{content:"\1F3A8"}
 .config-page .nav a[href="/music"]::before{content:"\1F3B5"}
-.config-page .nav a[href="/codex"]::before{content:"\1F4CA"}
 .config-page .nav a[href="/config"]::before{content:"\2699"}
 .config-page .nav .ni{width:18px;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
 .config-page .nav a:hover,.config-page .nav a.active{color:var(--ac);border-color:var(--ac);background:var(--hv);transform:translateY(-1px);box-shadow:0 0 0 2px var(--ag)}
 @media(max-width:640px){.config-page .page{width:100%;padding-left:12px;padding-right:12px}.config-page .nav{padding:7px;gap:7px;border-radius:16px}.config-page .nav a{min-height:36px;padding:0 11px;font-size:12px}}
+.config-page #buzzer .switch-row > span > span{font-size:11px;font-weight:700;opacity:.72;margin-left:6px}
 /* Access auth card polish */
 .config-page #auth .section-body{display:grid;gap:14px}
 .config-page #auth .form-grid{gap:16px}
@@ -2152,7 +2152,6 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
       <a href="/message">文字留言</a>
       <a href="/board">画布留言</a>
       <a href="/music">音乐</a>
-      <a href="/codex">额度</a>
       <a href="/config" class="active">设备配置</a>
     </nav>
 
@@ -2457,39 +2456,39 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
             </div>
             <div class="switch-list">
               <label class="switch-row">
-                <span><b>开机就绪提示</b><span id="bzStartupLabel">已开启</span></span>
+                <span><b>开机就绪提示</b><span id="bzStartupLabel">已开启 · 1 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzStartup"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>实体按键确认</b><span id="bzKeyLabel">已开启</span></span>
+                <span><b>实体按键确认</b><span id="bzKeyLabel">已开启 · 1 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzKey"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>WiFi 配网提示</b><span id="bzNotifyLabel">已开启</span></span>
+                <span><b>WiFi 配网提示</b><span id="bzNotifyLabel">已开启 · 2/3 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzNotify"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>低电量按键提醒</b><span id="bzLowBatteryLabel">≤15% 时按键快响 5 下</span></span>
+                <span><b>低电量按键提醒</b><span id="bzLowBatteryLabel">已开启 · ≤15% 快响 5 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzLowBattery"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>OTA 升级结果</b><span id="bzOtaLabel">已开启</span></span>
+                <span><b>OTA 升级结果</b><span id="bzOtaLabel">已开启 · 2/3 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzOta"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>倒计时结束</b><span id="bzCountdownLabel">已开启</span></span>
+                <span><b>倒计时结束</b><span id="bzCountdownLabel">已开启 · 5 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzCountdown"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>显示异常提示</b><span id="bzDisplayErrorLabel">已开启</span></span>
+                <span><b>显示异常提示</b><span id="bzDisplayErrorLabel">已开启 · 3 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzDisplayError"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>内容推送成功</b><span id="bzContentLabel">已开启</span></span>
+                <span><b>内容推送成功</b><span id="bzContentLabel">已开启 · 2 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzContent"><span class="sl"></span></span>
               </label>
               <label class="switch-row">
-                <span><b>进入睡眠提示</b><span id="bzSleepLabel">已开启</span></span>
+                <span><b>进入睡眠提示</b><span id="bzSleepLabel">已开启 · 1 下</span></span>
                 <span class="toggle"><input type="checkbox" id="bzSleep"><span class="sl"></span></span>
               </label>
             </div>
@@ -3284,15 +3283,15 @@ function setBuzzerVolume(v){
 }
 function updateBuzzerLabels(){
   setBuzzerLabel('bzEnabledLabel',document.getElementById('bzEnabled').checked);
-  setBuzzerLabel('bzStartupLabel',document.getElementById('bzStartup').checked);
-  setBuzzerLabel('bzKeyLabel',document.getElementById('bzKey').checked);
-  setBuzzerLabel('bzNotifyLabel',document.getElementById('bzNotify').checked);
-  setBuzzerLabel('bzLowBatteryLabel',document.getElementById('bzLowBattery').checked,'≤15% 时按键快响 5 下');
-  setBuzzerLabel('bzOtaLabel',document.getElementById('bzOta').checked);
-  setBuzzerLabel('bzCountdownLabel',document.getElementById('bzCountdown').checked);
-  setBuzzerLabel('bzDisplayErrorLabel',document.getElementById('bzDisplayError').checked);
-  setBuzzerLabel('bzContentLabel',document.getElementById('bzContent').checked);
-  setBuzzerLabel('bzSleepLabel',document.getElementById('bzSleep').checked);
+  setBuzzerLabel('bzStartupLabel',document.getElementById('bzStartup').checked,'已开启 · 1 下');
+  setBuzzerLabel('bzKeyLabel',document.getElementById('bzKey').checked,'已开启 · 1 下');
+  setBuzzerLabel('bzNotifyLabel',document.getElementById('bzNotify').checked,'已开启 · 2/3 下');
+  setBuzzerLabel('bzLowBatteryLabel',document.getElementById('bzLowBattery').checked,'已开启 · ≤15% 快响 5 下');
+  setBuzzerLabel('bzOtaLabel',document.getElementById('bzOta').checked,'已开启 · 2/3 下');
+  setBuzzerLabel('bzCountdownLabel',document.getElementById('bzCountdown').checked,'已开启 · 5 下');
+  setBuzzerLabel('bzDisplayErrorLabel',document.getElementById('bzDisplayError').checked,'已开启 · 3 下');
+  setBuzzerLabel('bzContentLabel',document.getElementById('bzContent').checked,'已开启 · 2 下');
+  setBuzzerLabel('bzSleepLabel',document.getElementById('bzSleep').checked,'已开启 · 1 下');
 }
 
 async function loadBuzzer(){
@@ -3506,8 +3505,8 @@ async function readSensorNow(){
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function collectBackupConfig(){
-  var endpoints=['/weather_config','/news_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
-  var names=['weather','news','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
+  var endpoints=['/weather_config','/news_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/buzzer_config','/sensor_config'];
+  var names=['weather','news','clock','message','slideshow','timetable','todo','countdown','power','buzzer','sensor'];
   var backup={_version:1,_date:new Date().toISOString()};
   for(var i=0;i<endpoints.length;i++){
     try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -3517,7 +3516,7 @@ async function collectBackupConfig(){
 
 async function applyBackupConfig(backup){
   if(!backup||!backup._version)throw new Error('文件格式无效，请使用导出的备份文件');
-  var map={weather:'/weather_config',news:'/news_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
+  var map={weather:'/weather_config',news:'/news_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
     timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',buzzer:'/buzzer_config',sensor:'/sensor_config'};
   var ok=0,fail=0;
   for(var key in map){

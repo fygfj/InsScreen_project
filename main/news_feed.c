@@ -31,8 +31,8 @@ static const char *NVS_NS = "news";
 #define NEWS_DEFAULT_REFRESH_SEC 1800
 #define NEWS_MIN_REFRESH_SEC     60
 #define NEWS_MAX_REFRESH_SEC     86400
-#define NEWS_HTTP_TIMEOUT_MS     12000
-#define NEWS_HTTP_MAX_BYTES      12288
+#define NEWS_HTTP_TIMEOUT_MS     30000
+#define NEWS_HTTP_MAX_BYTES      32768
 #define NEWS_DEFAULT_PAGE_SIZE   NEWS_FEED_MAX_ITEMS
 #define NEWS_JUHE_ENDPOINT       "https://v.juhe.cn/toutiao/index"
 
@@ -852,7 +852,7 @@ static esp_err_t news_feed_fetch_now_wait(uint32_t wait_ms)
 
 esp_err_t news_feed_fetch_now(void)
 {
-    return news_feed_fetch_now_wait(200);
+    return news_feed_fetch_now_wait(NEWS_HTTP_TIMEOUT_MS + 2000);
 }
 
 static bool data_needs_fetch(const news_feed_config_t *cfg)

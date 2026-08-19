@@ -30,6 +30,7 @@ static const char *TAG = "music";
 #define MUSIC_LRCLK_GPIO       GPIO_NUM_40
 #define MUSIC_DIN_GPIO         GPIO_NUM_41
 #define MUSIC_SD_MODE_GPIO     GPIO_NUM_42
+#define MUSIC_VDD_EN_GPIO      GPIO_NUM_16
 
 #define MUSIC_DEFAULT_VOLUME   35U
 #define MUSIC_MIN_SAMPLE_RATE  8000U
@@ -467,7 +468,7 @@ esp_err_t music_player_validate_file(const char *path, const char *filename)
 static esp_err_t amp_set_enabled(bool enabled)
 {
     gpio_config_t cfg = {
-        .pin_bit_mask = 1ULL << MUSIC_SD_MODE_GPIO,
+        .pin_bit_mask = (1ULL << MUSIC_SD_MODE_GPIO) | (1ULL << MUSIC_VDD_EN_GPIO),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -476,7 +477,10 @@ static esp_err_t amp_set_enabled(bool enabled)
     esp_err_t err = gpio_config(&cfg);
     if (err != ESP_OK)
         return err;
-    return gpio_set_level(MUSIC_SD_MODE_GPIO, enabled ? 1 : 0);
+    err = gpio_set_level(MUSIC_SD_MODE_GPIO, enabled ? 1 : 0);
+    if (err != ESP_OK)
+        return err;
+    return gpio_set_level(MUSIC_VDD_EN_GPIO, enabled ? 1 : 0);
 }
 
 static esp_err_t i2s_open(uint32_t sample_rate_hz, i2s_chan_handle_t *out)
@@ -886,9 +890,9 @@ esp_err_t music_player_init(void)
     xSemaphoreGive(lock);
 
     (void)amp_set_enabled(false);
-    ESP_LOGI(TAG, "ready on BCLK=%d LRCLK=%d DIN=%d MODE=%d volume=%u%%",
+    ESP_LOGI(TAG, "ready on BCLK=%d LRCLK=%d DIN=%d MODE=%d VDD_EN=%d volume=%u%%",
              MUSIC_BCLK_GPIO, MUSIC_LRCLK_GPIO, MUSIC_DIN_GPIO,
-             MUSIC_SD_MODE_GPIO, (unsigned)volume);
+             MUSIC_SD_MODE_GPIO, MUSIC_VDD_EN_GPIO, (unsigned)volume);
     return ESP_OK;
 }
 

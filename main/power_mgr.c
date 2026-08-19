@@ -36,10 +36,9 @@ static const char *TAG = "power";
 #define EPD_SLEEP_SETTLE_MS    25000
 #define CALENDAR_MIDNIGHT_WAKE_GRACE_S 5
 
-/* Encoder inputs are active-low and all three GPIOs are RTC-capable. */
-#define WAKE_GPIO_ENC_A   4
-#define WAKE_GPIO_ENC_B   18
-#define WAKE_GPIO_ENC_SW  0
+/* Deep sleep uses timer wake only on this board revision. Encoder pins can sit
+ * low depending on the mechanical state, and GPIO0 is also a strap pin; using
+ * them as EXT1 wake sources can prevent real sleep or cause immediate wake. */
 
 static power_config_t s_cfg = {
     .enabled        = false,
@@ -322,20 +321,9 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
         return;
     }
 
-    uint64_t gpio_mask =
-        (1ULL << WAKE_GPIO_ENC_A) |
-        (1ULL << WAKE_GPIO_ENC_B) |
-        (1ULL << WAKE_GPIO_ENC_SW);
-    esp_err_t werr =
-        esp_sleep_enable_ext1_wakeup(gpio_mask, ESP_EXT1_WAKEUP_ANY_LOW);
-    if (werr != ESP_OK)
-        ESP_LOGE(TAG, "ext1 wakeup config failed: %s (check RTC GPIO mask)",
-                 esp_err_to_name(werr));
-
     ESP_LOGI(TAG,
-             "Entering deep sleep for %llu s (configured interval=%d min, EXT1 active-low encoder GPIO %d/%d/%d)",
-             (unsigned long long)(sleep_us / 1000000ULL), cfg.interval_min,
-             WAKE_GPIO_ENC_A, WAKE_GPIO_ENC_B, WAKE_GPIO_ENC_SW);
+             "Entering deep sleep for %llu s (configured interval=%d min, timer wake only)",
+             (unsigned long long)(sleep_us / 1000000ULL), cfg.interval_min);
 
     if (buzzer_event_is_enabled(BUZZER_EVENT_SLEEP)) {
         esp_err_t berr = buzzer_beep_event(BUZZER_EVENT_SLEEP, 3000, 1, 50, 0);
